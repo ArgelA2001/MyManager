@@ -1,0 +1,1374 @@
+from selenium.webdriver.common.keys import Keys
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support import expected_conditions as EC
+from ProgramFunctions import *
+import sqlite3
+
+import time
+import os
+import math
+import re
+import json
+import psutil
+import pandas as pd
+from datetime import date, datetime
+
+class BaseDepop(BaseProgram):
+    def __init__(self):
+        super().__init__()
+
+    def dp_start_up(self, email, pw):
+        """
+        this function we just use to sign into depop to begin our excel scraping journey
+        """
+        cookies_button = WebDriverWait(self.driver, 20).until(EC.element_to_be_clickable(('css selector', '[data-testid="cookieBanner__acceptAllButton"]')))
+        cookies_button.click()
+        time.sleep(2)
+        self.driver.find_elements('css selector', '[data-testid="navigation__login"]')[-1].click()
+        time.sleep(2)
+        username = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located(('xpath', '//*[@id="username"]')))
+        username.send_keys(email)
+        time.sleep(2)
+        password = self.driver.find_element('css selector', '[data-testid="password"]')
+        password.send_keys(pw)
+        log_in_button = self.driver.find_element('css selector', '[data-testid="login__cta"]')
+        log_in_button.click()
+
+    def dp_scroll_down_script(self, selling_sold_or_not):
+        #! may need to adjust type of way to identify sold script:
+        #Maybe just use another argument to identify which type fo sold scraper to
+        """
+        This function will scroll down to the bottom of solds page to find users first known date of sale,
+        so we can then use this date to start creating excel sheets of all the sales data accurately
+        """
+        if selling_sold_or_not in ['Selling', 'Sold']: # only one of these two
+            while True:
+                active_filter = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable(('id', f'{selling_sold_or_not.lower()}-button')))
+                active_filter.click()
+                time.sleep(1)
+                current_selling_link = self.driver.find_element('xpath', '//*[contains(@class, "ShopNavigation-styles__ActiveTab")]')
+                if current_selling_link.text == selling_sold_or_not:
+                    break
+
+        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(1)
+        while True:
+            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            try:
+                WebDriverWait(self.driver, 2).until(EC.invisibility_of_element_located(('xpath', '//*[contains(@class, "LoadingBall__InnerSpinner")]')))
+                break
+            except TimeoutException:
+                pass
+        #! create a function to click on selling or sold, whatever tab were looking for
+
+    def draft_deleter(self):
+        #! UPDATEME
+        self.driver.get('https://www.depop.com/sellinghub/drafts/incomplete/')
+        self.web_driver_wait('css selector', '[data-testid="draftItem__missingFields"]')
+        missing_description = self.driver.find_elements('css selector', '[data-testid="draftItem__missingFields"]')
+        delete_button = self.driver.find_elements('css selector', '[data-testid="draftItem__deleteDraftTrigger"]')
+        print(len(delete_button))
+        for index, desc in enumerate(missing_description):
+            print('first deleter')
+            missing_description = self.driver.find_elements('css selector', '[data-testid="draftItem__missingFields"]')
+            print(len(missing_description))
+            self.driver.execute_script("arguments[0].scrollIntoView(true)",missing_description[0])
+            if 'description' in missing_description[0].text:
+                delete_button = self.driver.find_elements('css selector', '[data-testid="draftItem__deleteDraftTrigger"]')
+                self.driver.execute_script("arguments[0].scrollIntoView(true)",delete_button[0])
+                self.driver.execute_script("arguments[0].click();", delete_button[0])
+                time.sleep(1)
+                delete_draft = self.driver.find_element('css selector', '[data-testid="confirmation--modal__confirm"]')
+                delete_draft.click()
+                time.sleep(2)
+            else:
+                self.scroll_down()
+
+    def active_listing_relister(self):
+        #! UPDATEME
+        count = 0
+        try:
+            print("starting item count " + str(count))
+            time.sleep(3)
+            # print('reading all posts')
+            posts_for_link = self.driver.find_elements('css selector', '[data-testid="product__item"]')
+            # print('posts_for_link: ', len(posts_for_link))
+
+            all_post = self.driver.find_elements('css selector', '[data-testid="primaryProductImage"]')
+            # print('all post', len(all_post))
+            sold_post = self.driver.find_elements('xpath', '//*[contains(@class, "styles__SoldOverlay-sc-__sc-13q41bc-9 jMuEhs")]')
+            # print('sold_post', len(sold_post))
+            total_available_post = len(all_post) - len(sold_post)
+            # print('length of posts')
+            # print('total_available_post', total_available_post)
+            # for i in range(2):
+            for _ in range(total_available_post):
+                posts_for_link = self.driver.find_elements('css selector', '[data-testid="product__item"]')
+                all_post = self.driver.find_elements('css selector', '[data-testid="primaryProductImage"]')
+                print('posts for link', len(posts_for_link))
+                print('start post ', str(count))
+                try:
+                    self.driver.execute_script("arguments[0].scrollIntoView(true)",all_post[count])
+                    print('clicking good')
+                except:
+                    pass
+                
+                time.sleep(1)
+                # driver.execute_script("arguments[0].click()",all_post[count])
+                post_url = posts_for_link[count].get_attribute('href')
+                time.sleep(3)
+                # driver.execute_script("window.open('" + post_url + "', '_blank');")
+                # open a new tab with the second page
+                self.driver.execute_script("window.open('{}');".format(post_url))
+                time.sleep(2)
+                # switch to the second tab
+                self.driver.switch_to.window(self.driver.window_handles[1])
+
+                post_for_link = self.driver.find_elements('css selector', '[data-testid="product__item"]')
+                posts_for_link = post_for_link[1:]
+
+                all_post = self.driver.find_elements('css selector', '[data-testid="primaryProductImage"]')
+                edit_button =  self.driver.find_element('xpath', '//*[contains(@class, "ButtonEdit-sc-")]')
+                edit_button.click()
+                time.sleep(1)
+                
+                save_changes_button =  WebDriverWait(self.driver, 10).until(EC.presence_of_element_located(('xpath', '//*[contains(@class, "SaveButton-sc")]')))
+                self.driver.execute_script("arguments[0].scrollIntoView(true)",save_changes_button)
+                save_changes_button.click()
+                count += 1
+                self.driver.close()
+                self.driver.switch_to.window(self.driver.window_handles[0])
+                time.sleep(2)
+        except Exception as e:
+            self.handle_exceptions(e, 'Failed to load, or I purposely closed it, Uploading the data')
+    
+    def deleting_post_script(self):
+        """ 
+        #! UPDATEME
+        #! this code may need some work on it since some active posts need to just be skipped so in that case would have to just increase iterator by 1
+
+        goes post by post to delete all active post
+        """
+        delete_iterator = 0
+        self.driver.get(f"https://www.depop.com/{DEPOP_USERNAME}/")
+        while True:
+            WebDriverWait(self.driver, 30).until(EC.element_to_be_clickable(('xpath', '//*[contains(@class, "FullName")]')))
+            total_posts = self.driver.find_elements('css selector', '[data-testid="product__item"]')
+            if len(total_posts) >= 1:
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'})", total_posts[delete_iterator])
+                total_posts[delete_iterator].click()
+                break
+            WebDriverWait(self.driver, 30).until(EC.element_to_be_clickable(('css selector', '[class*="TextContainer"]')))
+            dp_title = self.driver.find_element('css selector', '[class*="TextContainer"]').text
+            print(dp_title)
+            if 'GANT Burgundy Embroidered Quarter Zip Sweater Large' in dp_title or 'San Jose Golddigger Vintage Sports Volleyball Hat White foam trucker mesh cap' in dp_title:
+                delete_iterator += 1
+                self.driver.back()
+                continue
+            try:
+                delete_button = WebDriverWait(self.driver, 8).until(EC.element_to_be_clickable(('css selector', '[data-testid="button__delete"]')))
+            except:
+                delete_iterator += 1
+                continue
+            self.driver.execute_script('arguments[0].click();', delete_button)
+            time.sleep(1)
+
+            delete_button_confirm = WebDriverWait(self.driver, 30).until(EC.element_to_be_clickable(('css selector', '[data-testid="confirmation--modal__confirm"]')))
+            delete_button_confirm.click()
+
+    def unfollow_list(self, delay):
+        #!UPDATEME
+        followers_button = self.driver.find_elements('xpath', '//*[contains(@class, "styles__StatsValue-sc")]')
+        followers_button[1].click()
+
+        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located(('css selector', '[data-testid="followingButton"]')))
+        while True:
+            # Get the list of buttons
+            am_following = self.driver.find_elements('css selector', '[data-testid="followingButton"]')
+            following = self.driver.find_elements('xpath', '//*[contains(@class, "styles__SmallButton")]')
+
+            # Click each button visible on the page
+            for ele in am_following:
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", ele)
+                time.sleep(delay)
+                try:
+                    ele.click()
+                except:
+                    self.driver.execute_script("arguments[0].click()", ele)
+
+            # Scroll down to the bottom of the page to load more buttons
+            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+
+            # Wait for new buttons to load
+            time.sleep(2)
+
+            # Check if there are more buttons to click
+            new_following = self.driver.find_elements('xpath', '//*[contains(@class, "styles__SmallButton")]')
+            print(len(new_following))
+            # If there are no more buttons to click, exit the loop
+            if len(new_following) == len(following):
+                break
+            following = new_following
+
+    def follow_list(self, account_name):
+        #!UPDATEME
+        post_url = f'https://www.depop.com/{account_name}/'
+        self.driver.execute_script("window.open('{}');".format(post_url))
+        self.driver.close()
+        time.sleep(1)
+        self.driver.switch_to.window(self.driver.window_handles[0])
+        followers_button = self.driver.find_elements('xpath', '//*[contains(@class, "styles__StatsValue-sc")]')
+        followers_button[0].click()
+        time.sleep(1)
+        #account name to switch to person whos account you want to follow their followers
+        while True:
+            not_following = self.driver.find_elements('css selector', '[data-testid="followButton"]')
+            not_following_clicker = not_following[1:]
+            for ele in not_following_clicker:
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", ele)
+                self.driver.execute_script("arguments[0].click()", ele)
+            while len(not_following) != 0:
+                not_following = self.driver.find_elements('css selector', '[data-testid="followButton"]')
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", not_following[-1])
+
+#! fid a way to get rid of as many arguments as possible
+#? Maybe something along the lines of creating initializations? depending on if the values are there or not?
+#? for most part all depop should have same columns and information, all grailed have same info etc. so just a matter of initializing it with each iteration so that with each iteration, it can safely just call the info
+class DepopAutoFeedback(BaseDepop):
+    #!UPDATEME
+    def __init__(self):
+        super().__init__()
+        #! most likely will need to login for this
+        self.driver.get('https://www.depop.com/sellinghub/sold-items/')
+
+    def each_post(self): #started with 150
+        global count
+        global refund
+        global skip_rest_of_code
+        time.sleep(10)
+        all_post = self.driver.find_elements('xpath', '//*[contains(@class, "ListRow-styles__Row")]')
+        all_posts = all_post[count:]
+        for i, post in enumerate(all_posts):
+            sold_date = self.driver.find_elements('css selector', '[type="caption1"]')
+            sold_date = sold_date[17:]
+            sold_date = sold_date[i*2]
+            sold_date_text = sold_date.text
+            sold_date_text = sold_date_text.replace(' days ago', '')
+            try:
+                sold_date_text = int(sold_date_text)
+                if sold_date_text < 9:
+                    count += 1
+                    continue
+            except:
+                pass
+            print('moving on')
+            self.driver.execute_script("arguments[0].scrollIntoView(true)",all_post[count])
+            self.driver.execute_script('arguments[0].click();', all_post[count])
+            time.sleep(2)
+            # grabbing_item_title()
+            self.refunded_payment()
+            if refund == 0:
+                time.sleep(2)
+                self.my_feedback()
+                if skip_rest_of_code == False:
+                    self.cust_feedback()
+            elif refund == 1:
+                print('item has been refunded')
+            print("ending count #" + str(count))
+            time.sleep(2)
+            count += 1
+
+    def grabbing_item_title(self):
+        try:
+            item_title = self.driver.find_element('xpath' ,'//*[@id="main"]/div[3]/aside/div[2]/div/div[2]/section/div/div/div/p')
+            title_text = item_title.getText()
+            print(title_text)
+            print('title 1')
+        except:
+            try:
+                title_of_item = self.driver.find_element('xpath', '//*[@id="main"]/div[3]/aside/div[2]/div/div[2]/section/div/div/div/p/text()')
+                print(title_of_item.text)
+                print('title 2')
+            except:
+                print('title failed')
+
+    first_phrase_list = ['Hey, just wanted to check in and make sure you received your item!', 'Hey, just wanted to check in and see how you liked your item!', "Hey, Just wanted to check in and see if you received your item!", "Hey, Just wanted to check in and see if you received your item!"]
+    def cust_feedback(self):
+        global customer_response_length
+        global count
+        text_messages_list = []
+        try:
+        # Find the element containing the text
+            customer_feedback = self.driver.find_element('xpath', "//*[contains(text(), 'left you feedback:')]")
+            customer_feedback
+            # print("YES Customer Feedback")
+        except:
+            time.sleep(3)
+            # print("NO Cust Feedback")
+            message_button = WebDriverWait.until(EC.element_to_be_clickable(('xpath', '//*[contains(@class, "styles__MessageButton")]')))
+            message_button = self.driver.find_element('xpath', '//*[contains(@class, "styles__MessageButton")]')
+            self.driver.execute_script('arguments[0].click();', message_button)
+            time.sleep(3)
+            # print('upcoming text messages in chat log')
+            messages_btwn_customer = self.driver.find_elements('css selector', '[data-testid="messages__text"]')
+            # if len(messages_btwn_customer) >= 1 :
+            for messages in messages_btwn_customer:
+                text_in_messages = messages.text
+                text_messages_list.append(text_in_messages)
+            # print('ending in chat log')
+            did_i_send_message = next((string2 for string1 in first_phrase_list for string2 in text_messages_list if string1 == string2), None)
+            if did_i_send_message:
+                print('1st message has been sent')   
+                index_position = text_messages_list.index(did_i_send_message)
+                customer_response_length = index_position + 2
+                
+                time.sleep(2)
+                if customer_response_length <= len(text_messages_list):
+                    # print('Customer has responded')
+                    print(text_messages_list)
+                    if "If you could leave me a review, I'd really appreciate it!" in text_messages_list:
+                        print('I also sent the 2nd message')
+                    else:
+                        print('message not sent 1')
+                        self.driver.find_element('css selector', '[data-testid="message--composer__field"]').send_keys("If you could leave me a review, I'd really appreciate it!")
+                        time.sleep(7)
+                        submit_message_button = self.driver.find_element('css selector', '[data-testid="message--composer__submit"]')
+                        self.driver.execute_script('arguments[0].click();', submit_message_button)
+
+            else:
+                print('I have not sent the message')
+                time.sleep(3) 
+                
+                #send message to customer
+                self.driver.find_element('css selector', '[data-testid="message--composer__field"]').send_keys('Hey, just wanted to check in and see how you liked your item!')
+                time.sleep(6) 
+                submit_message_button = self.driver.find_element('css selector', '[data-testid="message--composer__submit"]')
+                self.driver.execute_script('arguments[0].click();', submit_message_button)
+
+                time.sleep(4) 
+            close_message_button = self.driver.find_element('css selector', '[data-testid="modal__close"]')
+            self.driver.execute_script('arguments[0].click();', close_message_button)
+
+            time.sleep(2)
+            ovr_message_close_button = self.driver.find_element('css selector', '[data-testid="receiptDrawer__closeButton"]')
+            self.driver.execute_script('arguments[0].click();', ovr_message_close_button)
+
+    def my_feedback(self):
+        global leaving_feedback_button
+        global skip_rest_of_code
+        time.sleep(2)
+        skip_rest_of_code = False
+        try:
+            full_star_elements = self.driver.find_elements('xpath, '"//*[contains(text(), 'Full Star')]")
+            print(len(full_star_elements))
+            if len < 2:
+                ovr_message_close_button = self.driver.find_element('css selector', '[data-testid="receiptDrawer__closeButton"]')
+                self.driver.execute_script('arguments[0].click();', ovr_message_close_button)
+                skip_rest_of_code = True
+        except:
+            pass
+        if skip_rest_of_code == False:
+            try:
+            # Find the element containing the text
+                feedback_from_me = self.driver.find_element('xpath', "//*[contains(text(), 'Your Feedback for the buyer:')]")
+                feedback_from_me
+            except:
+                leaving_feedback_button = self.driver.find_elements('css selector', '[type="button"]')
+                self.driver.execute_script('arguments[0].click();', leaving_feedback_button[-1])
+                WebDriverWait.until(EC.element_to_be_clickable(('xpath' ,'//*[contains(@class, "CreateFeedbackModal-styles__ModalContainer")]')))
+                # wait.until(EC.element_to_be_clickable(('css selector' ,'[id^="feedback-star-4"]')))
+                five_star_feedback_elements = self.driver.find_elements('css selector', '[id^="feedback-star-4"]')
+                # five_star_feedback_elements = driver.find_elements('xpath', '//*[contains(@id, "feedback-star-4")]')
+                time.sleep(2)
+                self.driver.execute_script("arguments[0].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));", five_star_feedback_elements[0])
+                time.sleep(1)
+
+                all_text = self.driver.find_element('xpath', "/html/body").text
+                if 'Click on a star to rate your experience with this buyer.' in all_text:
+                    print('first click didnt work')
+                    self.driver.execute_script("arguments[0].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));", five_star_feedback_elements[0])
+                self.sending_feedback_message()
+
+    def sending_feedback_message(self):
+        time.sleep(3)
+        sending_feedback_message = self.driver.find_element('xpath', '//*[contains(@class, "styles__StyledTextareaAutosize")]')
+        sending_feedback_message.send_keys('Thanks for the purchase!! Hope you enjoy the piece!')
+        time.sleep(2)
+        #might have to adjust this since class varies, or locate by text of leave feedback button
+        submit_feedback = self.driver.find_elements('css selector', '[type="button"]')
+        self.driver.execute_script("arguments[0].click();", submit_feedback[-1])
+
+    def refunded_payment(self):
+        global refund
+        time.sleep(3)
+        refund = 0
+        try:
+        # Find the element containing the text
+            payment_refunded = self.driver.find_element('xpath', "//*[contains(text(), 'Payment refunded on')]")
+            payment_refunded
+            # print("YES Refund")
+            refund = 1
+        except:
+            # print("NO Refund")
+            refund = 0
+
+#!Basically Poster and DBPoster are all the same, id rather upload rows into databases then spreadsheets
+class DepopDBPoster(BaseDepop):
+    hat_accessories_categories = ['Hats', 'Bags & Purses', 'Bags', 'Belts', 'Caps', 'Hats and Caps', 'Gloves', 'Scarves and wraps', 'Scarves', 'Wraps', 'Sunglasses', 'Wallets and cardholders', 'Wallets', 'Cardholders', 'Jewelry', 'Watches', 'Hair accessories']
+
+    #! maybe with this would need some way to find the discrepencies/differences in posts between different programs, part of program cleaner as well, to identify which listings need to be posted?
+    #! Can use image hash with this
+    def __init__(self):
+        super().__init__()
+        self.size_count = None
+        self.size_mapping_category = 'Nothing'
+        self.category_error = True
+        self.get_table_name('Depop', 'Selling')
+
+        self.image_directory = None
+
+        #! Item descriptions
+        """
+        Since this is the poster, need to use the sql extractor to extract all this information, using next() to extract each info for each iteration
+        """
+        self.id_num = None
+        self.dp_item_title = None
+        self.dp_price = None
+        self.dp_brand = None
+        self.dp_gender = None
+        self.dp_gen_category = None
+        self.dp_category = None
+        self.dp_size = None
+        self.dp_condition = None
+        self.dp_color = None
+        self.dp_images = None
+        self.query_variable = 'dp_title, dp_men_or_wmn, dp_price, dp_brand, dp_gen_category, dp_category, dp_size, dp_condition, dp_color,'
+        #! categories I do need
+        #! create preset query to insert into it?
+
+    def location_selector(self):
+        #picking country
+        location_select = WebDriverWait(self.driver, 20).until(EC.element_to_be_clickable(('id', 'selectLocation__countries__select')))
+        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'})", location_select)
+        location_select.send_keys(self.user_country, Keys.ENTER)
+
+        #picking city
+        city_select = WebDriverWait(self.driver, 20).until(EC.element_to_be_clickable(('id', 'selectLocation__cities__select')))
+        city_select.send_keys(self.user_city, Keys.ENTER)
+
+    def picking_multiple_options_in_category(self, element_list, element_identifier):
+        """
+        easy function to allow us to pick multiple options in those categories that are static and multiple,
+        or even singular if requested
+        Arguments
+        element identifier
+        list of which options to click
+        """
+        for element_id in element_list:
+            element_click = WebDriverWait(self.driver, 20).until(EC.element_to_be_clickable(('id', element_identifier)))
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'})", element_click)
+            element_click.click()
+            time.sleep(1)
+            element_options = self.driver.find_elements('xpath', '//*[contains(@class, "select__option")]')
+            self.driver.execute_script('arguments[0].click();', element_options[element_id])
+
+    def identify_age(self):
+        """
+        identifies the age of the item in question
+        """
+        age_dropdown = self.driver.find_element('id', 'listingSelect__age__select')
+        age_dropdown.click()
+        age_options = self.driver.find_elements('xpath', '//*[contains(@class, "select__option")]')
+        age_mapping = {
+            'Modern': 0, 'Vintage': 2, 'VTG': 2, r'90s': 2, 'Y2K': 1, '2000': 1
+        }
+        found_value = None
+        for key, value in age_mapping.items():
+            if key.lower() in self.dp_item_title.lower():
+                found_value = value
+                break
+        if found_value is not None:
+            self.driver.execute_script('arguments[0].click();', age_options[found_value])
+        else:
+            self.driver.execute_script('arguments[0].click();', age_options[0])
+
+    def adding_color(self):
+        """
+        adds colors based on info provided to the program from our database
+        """
+        if self.dp_color != ' ':
+            time.sleep(1)
+            color_drop_down = self.driver.find_element('css selector', '[id="listingSelect__listing__colour__select"]')
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'})", color_drop_down)
+            color_drop_down.click()
+            options = self.driver.find_elements('css selector', '[type="body"]')
+            for option in options:
+                if option.text.lower() == self.dp_color.lower():
+                    self.driver.execute_script('arguments[0].click();', option)
+                    break
+
+    def adding_price(self):
+        choose_price_select = self.driver.find_element('xpath', '//*[@id="price__input"]')
+        ActionChains(self.driver).double_click(choose_price_select).perform()
+        choose_price_select.send_keys(Keys.BACKSPACE * 4, math.ceil(self.dp_price))
+
+    def pick_shipping(self, type_of_shipping):
+        if type_of_shipping == 'Manual':
+            #choosing manual shipping
+            manual_shipping = WebDriverWait(self.driver, 20).until(EC.element_to_be_clickable(('css selector', '[data-testid="manual__shipping__label"]')))
+            manual_shipping.click()
+
+            pick_shipping_select = self.driver.find_element('xpath', '//*[@id="national_shipping__manual__input"]')
+            ActionChains(self.driver).double_click(pick_shipping_select).perform()
+            pick_shipping_select.send_keys(Keys.BACKSPACE * 3, '3')
+        else:
+            #Create code for depop guided shipping, even though manual is preferred for me and the user
+            pass
+
+    def db_adding_pics(self, id_num):
+        """
+        add pictures to the database based on the id number given to it in the
+        ImageDBReplacer function we created
+        """
+        time.sleep(1)
+        image_files = [f for f in os.listdir(self.images_directory) if f.startswith(f'{str(id_num)}_picture')]
+        for image in image_files:
+            self.driver.find_element('xpath', '//*[@id="imageInput"]').send_keys(os.path.join(self.images_directory, image))
+            time.sleep(12)
+
+    def adding_condition(self):
+        condition_mapping = {
+        'Brand New': 0, 'Like New': 1, 'Used - Excellent': 2, 'Used - Good': 3, 'Used - Fair': 4
+            }
+        try:
+            open_condition = self.driver.find_elements('id', "listingSelect__listing__condition__select")
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'})", open_condition[-1])
+            open_condition[-1].click()
+            time.sleep(2)
+            diff_conditions = self.driver.find_elements('xpath', "//*[contains(@class, 'select__option')]")
+            if self.dp_condition in condition_mapping:
+                condition_index = condition_mapping[self.dp_condition]
+                self.driver.execute_script('arguments[0].click();', diff_conditions[condition_index])
+        except NoSuchElementException as e:
+            self.handle_exceptions(e, 'CONDITION NOT FOUND')
+
+    def picking_category_item(self):
+        self.category_error = True
+        self.size_mapping_category = "Nothing"
+        category_dropdown = self.driver.find_element('xpath', '//*[contains(@class, "select__value-container")]')
+        category_dropdown.click()
+        main_category = self.driver.find_elements('xpath' ,"//*[contains(@class, 'select__option')]")
+        if self.dp_gen_category == 'Dresses':
+            main_category[13].click()
+            self.size_mapping_category = 'Tops'
+        elif self.dp_category == ' ' or self.dp_gen_category == ' ':
+            self.dp_category_error = False
+        else:
+            if self.dp_category in ['Coat', 'Jacket', 'Vests', 'Gilets']:
+                main_category[14 if self.dp_gender == 'Women' else 2].click()
+                coat_mapping = {
+                    'Coat': 0, 'Jacket': 1, 'Vests': 2, 'Gilets': 2
+                }
+                self.size_mapping_category = 'Tops'
+                current_mapping = coat_mapping
+
+            elif self.dp_category in ['T-shirts', 'Hoodies', 'Sweatshirts', 'Sweaters', 'Jumpers', 'Shirts', 'Jersey', 'Polo shirts', 'Blouses', 'Crop tops', 'Tank tops and camis', 'Cardigans', 'Bodysuits', 'Corsets', 'Other']:
+                self.size_count = 3
+                main_category[11 if self.dp_gender == 'Women' else 0].click()
+                top_mapping = {
+                    'T-shirts': 0, 'Hoodies': 1, 'Sweatshirts': 2, 'Jumpers': 2, 'Sweaters': 3, 'Cardigans':4, 'Shirts': 5, 'Polo shirts': 6,
+                    'Blouses': 7, 'Crop tops': 8, 'Tank tops and camis': 9, 'Corsets': 10, 'Bodysuits': 11, 'Other': 12
+                }
+                self.size_mapping_category = 'Tops'
+                current_mapping = top_mapping
+
+            elif self.dp_category in ['Pants', 'Sweatpants', 'Jeans', 'Shorts', 'Leggings', 'Skirts', 'Joggers']: #Joggers, Trainers, Dungarees
+                main_category[12 if self.dp_gender == 'Women' else 1].click()
+                self.size_count = 2
+                bottoms_mapping = {
+                    'Jeans': 0, 'Sweatpants': 1, 'Joggers': 1, 'Pants': 2, 'Shorts': 3, 'Leggings': 4, 'Skirts': 5
+                }
+                self.size_mapping_category = 'Bottoms'
+                current_mapping = bottoms_mapping
+
+                time.sleep(1)
+            elif self.dp_category in ['Jumpsuits', 'Rompers', 'Overalls', 'Dungarees']:
+                main_category[14 if self.dp_gender == 'Women' else 3].click()
+                coverall_mapping = {
+                    'Jumpsuits': 0, 'Rompers': 2, 'Overalls': 3, 'Dungarees': 3
+                }
+                current_mapping = coverall_mapping
+                self.size_mapping_category = 'Bottoms'
+
+            elif self.dp_category in self.hat_accessories_categories:
+                main_category[18 if self.dp_gender == 'Women' else 6].click()
+                accessories_mapping = {
+                    'Bags': 0, 'Bags & Purses': 0, 'Belts': 1, 'Hats': 2, 'Caps': 2, 'Hats and caps': 2, 'Gloves': 3, 'Scarves': 4, 'Wraps': 4, 'Scarves and wraps': 4, 'Sunglasses': 5, 'Wallets': 6,
+                    'Cardholders': 6, 'Wallets and cardholders': 6, 'Jewelry': 7, 'Watches': 8, 'Hair accessories': 9
+                }
+                current_mapping = accessories_mapping
+                self.size_mapping_category = 'Nothing'
+
+            elif self.dp_category in ['Sneakers', 'Boots', 'Flip Flops & Slides', 'Slides', 'Sandals', 'Slippers', 'Brogues', 'Oxfords', 'Loafers', 'Espadrilles', 'Ballet shoes', 'Clogs', 'Pumps', 'Mules', 'Baby shoes', 'Trainers']:
+                main_category[17 if self.dp_gender == 'Women' else 5].click()
+                shoes_mapping = {
+                    'Sneakers': 0, 'Trainers': 0, 'Slides': 1, 'Sandals': 2, 'Flip flops': 3, 'Slippers': 4, 'Brogues': 5, 'Oxfords': 6,
+                    'Loafers': 7, 'Boots': 8, 'Boat shoes': 9, 'Espadrilles': 10, 'Ballet shoes': 11, 'Clogs': 12, 'Pumps': 13, 
+                    'Mules': 14, 'Baby shoes': 15, 'Flip Flops & Slides': 1
+                }
+                self.size_mapping_category = 'Shoes'
+                current_mapping = shoes_mapping
+
+            if self.dp_category in current_mapping:
+                diff_cat_options = self.driver.find_elements('xpath', '//*[contains(@class, "select__option")]')
+                current_index = current_mapping[self.dp_category]
+                self.driver.execute_script('arguments[0].click();', diff_cat_options[current_index])
+        time.sleep(2)
+
+    def adding_type(self):
+        """
+        checks the options to see if there is any type elements located in title and adds it from there
+        """
+        try:
+            type_dropdown = self.driver.find_element('xpath', '//*[contains(@id, "type-attribute__select")]')
+            type_dropdown.click()
+            type_options = self.driver.find_elements('xpath', '//*[contains(@class, "select__option")]')
+            for type_opt in type_options:
+                if type_opt.text.lower() in self.dp_item_title.lower():
+                    self.driver.execute_script('arguments[0].click();', type_opt)
+                    break
+        except NoSuchElementException:
+            pass
+
+    def pick_size_and_body_fit(self):
+        women_top_size_mapping = {
+            '0':1, '1': 2, '2':3, '3':4, '4':5, '5':6, '6':7, '7': 8, '8': 9, '9':10, '10': 11, '11': 12, 'XS': 14, 'S': 15, 'M': 16, 'L': 17,'XL': 18, 'XXL': 19,
+            '00': 20, '12': 21, '14': 22, '16': 23, '18': 24, '20': 25, '22': 26, '24': 27, '26': 28, '28': 29, '30': 30, 'XXS': 31, 'XXXL': 32, 'XXXXL': 33
+        }
+        top_size_mapping = {
+            "XXS": 9, "XS": 1, "S": 2, "M": 3, "L": 4, "XL": 5, "XXL": 6, "XXXL": 7,  "4XL": 20
+        }
+        bottom_size_matching = {
+            "XS": 1, "S": 2, "M": 3, "L": 4, "XL": 5, "XXL": 6, "XXXL": 7, '26"': 8, '27"': 9, '28"': 10, '29"': 11, '30"': 12, '31"': 13,
+            '32"': 14, '33"': 15, '34"': 16, '35"': 17, '36"': 18, '37"': 19, '38"': 20, '39"': 21, '40"': 22, '41"': 23, '42"': 24, 'XXS': 26, 'XXXXL': 27, '44"': 28, '46': 29
+        }
+        shoes_size_matching = {
+            'US 7': 1, 'US 7.5': 2, 'US 8': 3,'US 8.5': 4, 'US 9': 5, 'US 9.5': 6, 'US 10': 7, 'US 10.5': 8, 'US 11': 9,
+            'US 11.5': 10, 'US 12': 11, 'US 12.5': 12, 'US 13': 13, 'US 13.5': 14, 'US 14': 15, 'US 14.5': 16, 'US 15': 17
+        }
+        size_mapping_dict = {
+            'Tops': top_size_mapping,
+            'Bottoms': bottom_size_matching,
+            'Shoes': shoes_size_matching,
+            'Women Tops': women_top_size_mapping
+        }
+        # this code just confirms whether or not self.category is not a hat, theres no size for hats
+        if self.dp_category not in self.hat_accessories_categories:
+
+            # confirms whether its a womens top or not
+            if self.dp_gender == 'Women' and self.dp_gen_category == 'Tops':
+                self.size_mapping_category = 'Women Tops'
+            else:
+                open_size = self.driver.find_element('id', "createProductSizes__sizeRow0__size__select")
+                open_size.click()
+                pick_size = self.driver.find_elements('xpath', "//*[contains(@class, 'select__option')]")
+                time.sleep(2)
+
+                size_mapping = size_mapping_dict.get(self.size_mapping_category)
+                if size_mapping is None:
+                    raise TypeError('Size mapping not found')
+
+                if self.dp_size in size_mapping:
+                    size_index = size_mapping[self.dp_size]
+                    self.driver.execute_script("arguments[0].click();", pick_size[size_index])
+                    body_fit_num = 1 if self.dp_size in {"XXS", "XS", "S", "M"} else 2
+
+            try:
+                body_fit_click = self.driver.find_elements('id', 'body-fit-attribute__select')
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'})", body_fit_click[-1])
+                self.driver.execute_script("arguments[0].click();", body_fit_click[-1])
+                body_fit_options = self.driver.find_elements('xpath', '//*[contains(@class, "select__option")]')
+                body_fit_range = [2, 3] if body_fit_num == 1 else [1]
+
+                for body_fit_id in body_fit_range:
+                    body_fit_options[body_fit_id].click()
+                    body_fit_click[-1].click()
+
+            except Exception as e:
+                self.handle_exceptions(e, 'BODY FIT NO WORK YOU DUMBASS')
+
+    def changing_brand(self):
+        #changing the brand of the item
+        #! this first part is optional and will check if the brand listed is the correct brand
+        try:
+            title_of_item = title_of_item.lower().split(' ')
+            for key, value in self.brandss.items():
+                if any([v.lower() in title_of_item for v in value]):
+                # ! make a way to create a dictionary that groups words of 2 together to find common brand names
+                # ! so if the sentence is 1 2 3 4 5 6 7, it would go
+                # ! [1,2], [2,3], [3,4], [4,5], [5, 6], [6,7]
+                # ! just searches the words behind and in front of it
+                    if key == 'extras': # key is located in extra dictionary
+                        for v in value:
+                            if v.lower() in title_of_item:
+                                found_brand = True
+                                break
+                    else:
+                        if found_brand is False: # not an extra
+                            new_brand = key
+                            found_brand = True
+                        else: # either extra or post already had a brand
+                            new_brand = key
+                            print(new_brand)
+                            if new_brand.title() == self.brand_text.title():
+                                print('new and old brand match')
+                                self.depop_brand_list.append(new_brand.title())
+                                break
+                            else:
+                                time.sleep(2)
+                                print('brand was found, now need to add')
+                                edit_button = self.driver.find_element('xpath', '//*[contains(@class, "sc-gFGZVQ kPUsfy ProductOwnerstyles__ButtonEdit-sc-__evoxh9-2 ePFDlz")]')
+                                edit_button.click()
+                                time.sleep(3)
+                                print(new_brand)
+                                self.picking_brand(new_brand)
+                                break
+        except:
+            pass
+
+    def adding_brand(self):
+        if self.dp_brand.strip() != '':
+            listing_brand_select = self.driver.find_element('id', 'listingBrands__select')
+            listing_brand_select.send_keys(self.brand, Keys.ENTER)
+        else:
+            print('No brand to be found')
+
+    def adding_description(self):
+        #! make tags, description separator optional, along with general description
+        #! so that user is in coomplete control of this
+        description_separator = '--------------------------------------------------'
+        tags = '#vintage #realvintage #shirt #thrifted #thrift'
+        depop_description = f'{self.title}\n\n\n{description_separator}\n\n\n{GENERAL_DESCRIPTION}\n\n\n{tags}'
+        self.driver.find_element('xpath', '//*[@id="description"]').send_keys(depop_description)
+
+    def clicking_add_another(self):
+        post_add_another = self.driver.find_element('xpath' ,"//*[contains(@data-testid, 'postAddAnother')]")
+        self.driver.execute_script("arguments[0].scrollIntoView(true)", post_add_another)
+        self.driver.execute_script("arguments[0].click();", post_add_another)
+
+    def draft_or_post(self):
+        if self.category_error is False:
+            time.sleep(1)
+            draft = self.driver.find_element('xpath', '//*[contains(@class, "OutlineButtonRequest")]')
+            self.driver.execute_script("arguments[0].click();", draft)
+
+            #list next item to take us to the next post to fill that out and continue
+            list_next = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located(('xpath' ,'//*[@id="__next"]/div/div/div/div[1]/div[2]/a')))
+            self.driver.execute_script("arguments[0].click();", list_next)
+            time.sleep(2)
+        else:
+            time.sleep(1)
+            self.driver.find_element('xpath', '//*[contains(@class, "PostButton")]').click()
+
+#! also maybe create a checker to ensure that all pics are posted, like once the post is up, make sure that all
+#! intended pictures are up, and the pic length match, and if not, just readd the pictures that are needed,
+#! this can be identified with the image_hash to pinpoint which one exactly is missing
+
+    def depop_db_poster(self):
+        testing = BaseProgram()
+        depop_result_generator = testing.extracting_db_results('dp_inv__realvintage', 'dp_title, dp_men_or_wmn, dp_images, dp_price, dp_brand, dp_gen_category, dp_category, dp_size, dp_condition, dp_color1')
+        for results in depop_result_generator:
+            #!check if more information is needed for this
+            self.id_num = results[0]
+            self.dp_item_title = results[1]['dp_title']
+            self.dp_price = results[1]['dp_price']
+            self.dp_brand = results[1]['dp_brand']
+            self.dp_gender = results[1]['dp_men_or_wmn']
+            self.dp_gen_category = results[1]['dp_gen_category']
+            self.dp_category = results[1]['dp_category']
+            self.dp_size = results[1]['dp_size']
+            self.dp_condition = results[1]['dp_condition']
+            self.dp_color = results[1]['dp_color1']
+            self.dp_images = results[1]['dp_images'].split('; ')
+
+            self.extracting_db_results()
+            self.uploading_pics_to_file(self.images, self.id_num)
+
+            try:
+                self.location_selector()
+            except Exception as e:
+                self.handle_exceptions(e)
+                self.driver.refresh()
+                self.location_selector()
+
+            #style
+            self.picking_multiple_options_in_category([1, 2, 20], 'listingSelect__style__select')
+
+            #source
+            self.picking_multiple_options_in_category([0, 1], 'listingSelect__source__select')
+
+            self.identify_age()
+
+            #!! can even use my color identifier maybe?
+            self.adding_color()
+
+            self.adding_price()
+
+            self.pick_shipping("Manual")
+
+            self.db_adding_pics(self.id_num)
+
+            self.adding_condition()
+
+            if self.category_error is True:
+                self.picking_multiple_options_in_category([1, 3, 5], 'occasion-attribute__select')
+                self.adding_type()
+                self.pick_size_and_body_fit()
+
+            self.adding_brand()
+
+            self.adding_description()
+
+            self.clicking_add_another()
+
+            self.draft_or_post()
+
+class DepopActiveInvScraper(BaseDepop):
+    def __init__(self):
+        super().__init__()
+
+        self.depop_title_list = []
+        self.all_titles = []
+
+        self.depop_men_or_wmn_list = []
+        self.depop_gen_category_list = []
+        self.depop_sub_category_list = []
+        self.depop_size_list = []
+        self.depop_condition_list = []
+        self.depop_images_list = []
+        self.depop_image_len_list = []
+        self.depop_price_list = []
+        self.depop_style_list = []
+        self.depop_color1_list = []
+        self.depop_likes_list = []
+        self.depop_bag_list = []
+        self.depop_boosted_list = []
+        self.depop_url_list = []
+        self.depop_brand_list = []
+
+        self.new_brand = []
+
+        self.all_text = None
+        self.category = None
+        self.index = None
+        self.title_of_item = None
+        self.data = None
+
+    def navigate_to_sold(self):
+        sell_button = self.driver.find_element('xpath', '//*[contains(@class, "NavLinkText-sc-")]')
+        sell_button.click()
+        sold_button = WebDriverWait(self.driver, 40).until(EC.element_to_be_clickable(('xpath', '//*[contains(@class, "sellerHubNavigation__itemLink--sold")]')))
+        sold_button.click()
+
+    def picking_brand(self):
+        """ 
+        optional piece of code for this class, this is just if i would like to alter the brands to be more accurate according to the brand
+        database in this program, and it will make those changes if asked to, and save those changes
+        """
+        #! create code to identify brand of item to change
+        try:
+            brand_down = self.driver.find_element('xpath', '//*[@id="listingBrands__select"]')
+            brand_down.send_keys(self.new_brand, Keys.ENTER)
+            self.depop_brand_list.append(self.new_brand)
+            save_changes_button = self.driver.find_element('xpath', '//*[contains(@class, "styles__SaveButton-sc")]')
+            self.driver.execute_script("arguments[0].scrollIntoView(true)", save_changes_button)
+            time.sleep(1)
+            save_changes_button.click()
+            time.sleep(3)
+        except Exception as e:
+            self.handle_expceptions(e, 'BRAND NOT FOUND')
+
+
+    def data_identifier(self):
+        script_tag = self.driver.find_element('css selector', "[data-testid='meta-schema__json-ld']")
+        script_content = script_tag.get_attribute("innerHTML")
+        # data = script_content.encode('ascii', 'ignore').decode('unicode_escape')
+        self.data = json.loads(script_content)
+
+    def price_identifier(self):
+        price = self.data['offers']['price']
+        if price == '99999.00':
+            self.driver.close()
+            self.driver.switch_to.window(self.driver.window_handles[0])
+            time.sleep(2)
+            return False
+        else:
+            self.depop_price_list.append(price)
+            return True
+
+    def url_identifier(self):
+        url_string = self.data['offers']['url']
+        self.depop_url_list.append(str(url_string))
+
+    def title_identifier(self):
+        """
+        breaks down the title of the item
+        """
+        item_title = self.data['description']
+        #! need to figure out how to identify the description at all time using this
+        #? maybe finding a group of ------------------------------- regardless of what the description is
+        item_title = item_title.split(r'#|PLEASE', maxsplit=1).str[0].replace('\n', ' ')
+        item_title = item_title.encode('ascii', 'ignore').decode('unicode_escape')
+        self.depop_title_list.append(item_title)
+
+    def image_identifier(self):
+        images = self.data['image']
+        self.depop_images_list.append(images)
+        self.depop_image_len_list.append(int(len(images)))
+
+    def size_condition_identifier(self):
+        found_size = False
+        found_condition = False
+        condition_list = ['Brand new', 'Like new', 'Used - Excellent', 'Used - Good', 'Used - Fair']
+        size_and_condition = WebDriverWait(self.driver, 10).until(EC.presence_of_all_elements_located(('xpath', "//*[contains(@class, 'ProductAttributes-styles__Attribute-sc')]")))
+        for sac in size_and_condition:
+            if 'Size' in sac.text:
+                found_size = True
+                self.depop_size_list.append(sac.text.replace('Size ', ''))
+            if sac.text in condition_list:
+                found_condition = True
+                self.depop_condition_list.append(sac.text)
+        if not found_condition:
+            self.depop_condition_list.append('Used - Excellent')
+        if not found_size:
+            self.depop_size_list.append(' ')
+
+    def brand_identifier(self):
+        found_brand = False
+        total_breadcrumbs = self.driver.find_elements('css selector', "[data-testid='breadcrumb__item--link']")
+        for breadcrumb_id, breadcrumbs in enumerate(total_breadcrumbs):
+            if 'Brand' in breadcrumbs.text:
+                found_brand = True
+                brand_text = total_breadcrumbs[breadcrumb_id + 1].find_element('xpath', './/*[@itemprop="name"]').text
+                self.depop_brand_list.append(brand_text)
+                break
+        if not found_brand:
+            self.depop_brand_list.append(' ')
+
+    def color_identifier(self):
+        try:
+            extracted_color_list = []
+            color_list = ['Black', 'Grey', 'White', 'Brown', 'Tan', 'Cream', 'Yellow', 'Red', 'Burgundy', 'Orange', 'Pink', 'Purple', 'Blue', 'Navy', 'Green', 'Khaki', 'Multi', 'Silver', 'Gold']
+            color_elements = self.driver.find_elements('xpath', '//*[contains(@class, "DetailText")]')
+            for colors in color_elements:
+                if colors.text in color_list:
+                    extracted_color_list.append(colors.text)
+            color1 = extracted_color_list[0]
+            self.depop_color1_list.append(color1)
+
+        except Exception as e:
+            print(e)
+            self.depop_color1_list.append('')
+
+    def gender_identifier(self):
+        self.category = self.driver.find_elements('xpath', '//*[contains(@class, "BreadcrumbLink")]')
+        try:
+            men_or_wmn_text = self.category[3].text
+            if men_or_wmn_text in ['Menswear', 'Womenswear', 'Kids']:
+                self.depop_men_or_wmn_list.append(men_or_wmn_text)
+                index = 3
+            elif self.category[1].text in ['Menswear', 'Womenswear', 'Kids']:
+                men_or_wmn_text = self.category[1].text
+                self.depop_men_or_wmn_list.append(men_or_wmn_text)
+                index = 1
+        except:
+            self.depop_men_or_wmn_list.append('')
+
+    def gen_category_identifier(self):
+        try:
+            gen_category_text = self.category[self.index + 1].text.replace('swear', '')
+            self.depop_gen_category_list.append(gen_category_text)
+        except:
+            self.depop_gen_category_list.append(' ')
+
+    def sub_category_identifier(self):
+        try:
+            sub_category_text = self.category[self.index + 2].text
+            self.depop_sub_category_list.append(sub_category_text)
+        except:
+            self.depop_sub_category_list.append(' ')
+
+    def bag_match(self):
+        self.all_text = self.driver.find_element('xpath', "/html/body").text
+        bag_match = re.search(r'\d{1,3}$', self.all_text)
+        if bag_match:
+            number = int(bag_match.group())
+            self.depop_bag_list.append(number)
+        else:
+            self.depop_bag_list.append(0)
+
+    def like_count(self):
+        try:
+            like_count = self.driver.find_elements('css selector', '[data-testid="like-count"]')
+            self.depop_likes_list.append(like_count[0].text.replace(' likes', ''))
+        except IndexError:
+            self.depop_likes_list.append('0')
+
+    def boosted_identifier(self):
+        if 'Unboost listing' in self.all_text:
+            self.depop_boosted_list.append(1) # 1 = boosted
+        else:
+            self.depop_boosted_list.append(0) # 2 = Not boosted
+
+    def dp_db_scraper_facade(self):
+        """
+        Runs scraper code in a facade pattern, so that i just have to run 1 method
+        """
+        self.data_identifier()
+
+        if self.price_identifier():
+
+            self.url_identifier()
+
+            self.title_identifier()
+
+            self.image_identifier()
+
+            self.size_condition_identifier()
+
+            self.brand_identifier()
+
+            self.color_identifier()
+
+            self.gender_identifier()
+
+            self.gen_category_identifier()
+
+            self.sub_category_identifier()
+
+            self.bag_match()
+
+            self.like_count()
+
+            self.boosted_identifier()
+
+            self.driver.close()
+            self.driver.switch_to.window(self.driver.window_handles[0])
+            time.sleep(2)
+
+    def run_dp_db_scraper(self):
+        """
+        where we parse through each post to find the information available to it
+        """
+        self.dp_start_up('argelarroyo2001@gmail.com', 'Pineappleguy*305')
+        self.navigate_to_sold()
+        total_available_post = WebDriverWait(self.driver, 40).until(EC.presence_of_all_elements_located(('css selector', '[data-testid="product__item"]')))
+        for post_id, ind_post in enumerate(total_available_post):
+            print(f'next post {post_id}')
+            #? maybe create some type of code to identify the last known number for the scraper?
+            # if post_id < 931:
+            #     continue
+            self.driver.execute_script("arguments[0].scrollIntoView(true)", ind_post)
+            post_url = ind_post.get_attribute('href')
+            self.driver.execute_script(f"window.open('{post_url}');")
+            self.driver.switch_to.window(self.driver.window_handles[-1])
+            try:
+                self.dp_db_scraper_facade()
+            except Exception as e:
+                self.handle_exceptions(e)
+                self.driver.close()
+                self.driver.switch_to.window(self.driver.window_handles[0])
+
+class DepopCSVScraper(BaseDepop):
+    """
+    this class will allow us to prepare data from depop to be entered into our visualization program
+    """
+    account_username = '_realvintage' #! can scrape the dp name from start_up, and the username from sql log in data
+
+    def __init__(self, account_username):
+        super().__init__()
+        self.df = None
+        self.account_username = account_username
+        self.csv_table_name = f'dp_csv_solds_{self.account_username}'
+
+    def scrape_extracted_csv(self):
+        matching_files = []
+        #! this function loads the data
+        ten_minutes_ago = time.time() - 10 * 60
+        available_drives = [d.mountpoint for d in psutil.disk_partitions()]
+        # Walk through each drive and its subdirectories
+        for drive in available_drives:
+            print(drive)
+            for root, _, files in os.walk(drive):
+                for filename in files:
+                    if filename.endswith(".csv") and 'Recycle' not in filename and 'Depop Sales' in filename:
+                        file_path = os.path.join(root, filename)
+                        file_mtime = os.path.getmtime(file_path)
+
+                        if file_mtime >= ten_minutes_ago:
+                            matching_files.append(file_path)
+        return matching_files
+
+    def extracting_the_last_date(self):
+        """
+        this code extracts the last date of the slide and we then use this date to find out which dates to extract into a spreadsheet
+        we only use this if we dont have any previous database for this to look for, so works to create database for the very first time
+        """
+        #! By default this should be false, unless you have already done this script to gather your spreadsheets from depop
+        #? How would we check if this database exists?
+        database_exists = self.table_exists(self.csv_table_name)
+        if database_exists:
+            extracting_last_date = self.cursor.execute(f'SELECT EndDate FROM {self.csv_table_name} ORDER BY strftime("%Y-%m-%d", EndDate);').fetchall()
+            extracting_last_date = extracting_last_date[-1][0]
+            month, day, year = extracting_last_date.split('/')
+            if len(month) == 1:
+                month = f'0{month}'
+                print(month)
+            if len(day) == 1:
+                day = f'0{day}'
+            extracting_last_date = f'{month}/{day}/{year}'
+        else:
+            extracting_last_date = self.last_sold_scroll_down_script()
+        return extracting_last_date
+
+    def last_sold_scroll_down_script(self):
+        """
+        This function will scroll down to the bottom of solds page to find users first known date of sale, so we can then use this date to
+        start creating excel sheets of all the sales data accurately
+        """
+        self.driver.get('https://www.depop.com/sellinghub/sold-items/')
+        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located(('xpath', '//*[contains(@class, "ImageStack-styles__ImageOverlay-")]')))
+        while True:
+            self.scroll_down()
+            try:
+                WebDriverWait(self.driver, 1).until(EC.invisibility_of_element_located(('xpath', '//*[contains(@class, "LoadingBall__InnerSpinner")]')))
+                last_sold_date = self.driver.find_elements('css selector', '[data-testid="receipt__sold_on"]')
+                last_sold_date = last_sold_date[-1].text[:10] #! must make sure that this is the correct format of date
+                print(f'Finished with script {last_sold_date}')
+                return last_sold_date
+            except TimeoutException:
+                pass
+
+    def extracting_depop_excel_sheets(self, last_known_date):
+        """
+        this code allows us to export all the sales data from depop into an excel sheet
+        """
+        self.driver.get('https://www.depop.com/sellinghub/stats/')
+
+        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located(('css selector', '[aria-controls="download-modal"]')))
+        download_sales_button = self.driver.find_element('css selector', '[aria-controls="download-modal"]')
+        download_sales_button.click()
+        WebDriverWait(self.river, 10).until(EC.presence_of_element_located(('id', 'modal__title'))) #! Not sure if needed
+
+        start_date_entry = self.driver.find_element('id', 'salesDownloadModal__start')
+        start_date_entry.click()
+        time.sleep(.5)
+        start_date_entry.send_keys(last_known_date)
+        start_date_entry.send_keys(Keys.ENTER)
+
+        end_of_data = False
+        while True:
+            end_date_entry = self.driver.find_element('id', 'salesDownloadModal__end')
+            end_date_entry.click()
+            time.sleep(.5)
+            if end_of_data:
+                break
+
+            for _ in range(3):
+                try:
+                    next_month_arrow = self.driver.find_element('xpath', '//*[contains(@class, "react-datepicker__navigation react-datepicker__navigation--next")]')
+                    next_month_arrow.click()
+                except NoSuchElementException:
+                    end_of_data = True
+            choosing_latest_end_day = self.driver.find_elements('xpath', '//*[contains(@aria-label, "Choose")]')
+            choosing_latest_end_day[-1].click()
+
+            sales_download_button = self.driver.find_element('xpath', '//*[contains(@class, "DownloadButton")]')
+            sales_download_button.click()
+
+            WebDriverWait(self.driver, 15).until(EC.invisibility_of_element_located(('css selector', '[data-testid="download__cta--loading"]')))
+            start_date_entry = self.driver.find_element('id', 'salesDownloadModal__start')
+            start_date_entry.click()
+            time.sleep(.5)
+            for _ in range(3):
+                next_month_arrow = self.driver.find_element('xpath', '//*[contains(@class, "react-datepicker__navigation react-datepicker__navigation--next")]')
+                next_month_arrow.click()
+            choosing_red_date = self.driver.find_element('xpath', '//*[contains(@class, "keyboard-selected")]')
+            choosing_red_date.click()
+            time.sleep(.5)
+
+    def load_data(self):
+        """
+        this loads the spreadsheets and concats this into one file
+        """
+        matching_files = self.scrape_extracted_csv()
+
+        last_known_date = self.extracting_the_last_date()
+        self.extracting_depop_excel_sheets(last_known_date)
+
+        #!with the csv files we just created above, this will edit the information in the files to prepare it for what we need to do
+        dates = [datetime.strptime(re.search(r'\d{2}_\d{2}_\d{4}', file).group(0), "%m_%d_%Y") for file in matching_files]
+        sorted_files = [x for _, x in sorted(zip(dates, matching_files))]
+        df_read = [pd.read_csv(file) for file in sorted_files]
+        df = pd.concat(df_read)
+        df['Date of Sale'] = df['Date of Sale'].apply(lambda x: datetime.strptime(x, '%m/%d/%Y').strftime('%Y-%m-%d'))
+        df = df[df['Refunded to buyer amount'].isna()].reset_index()
+        removing_columns = [
+            'Time of sale',
+            'USPS Cost',
+            'Payment type',
+            'Address Line 1',
+            'Address Line 2',
+            'Post Code',
+            'Bundle',
+            'Country',
+            'City',
+            'State',
+            'US Sales tax',
+            'Fees refunded to seller',
+            'Refunded to buyer amount'
+            ]
+
+        #TODO Condition, Color, Department
+        df = df.drop(columns=removing_columns)
+        pd.set_option('display.max_rows', None)
+
+        df['Depop Payments fee'] = df['Depop Payments fee'].replace('="-"', '0')
+        df['Boosting fee'] = df['Boosting fee'].replace('="-"', '0').replace('$-', '0')
+        df['Description'] = df['Description'].str.encode('ascii', 'ignore').str.decode('ascii').str.split(r'#|PLEASE', maxsplit=1).str[0].str.strip()
+
+    def identifying_bundles(self):
+        """
+        this code will turn bundles into single valued items, meaning that it will breakdown the bundle price into the normal price while taking in the average of each shipping price for each item 
+        """
+        result_of_blanks = self.df[self.df['Bundle']== 'Yes']
+        ids = []
+        for idx in result_of_blanks.index:
+            ids.append(idx)
+        return ids
+
+    def grouping_numbers_together(self):
+        """
+        this will group all the bundles together by searching for any numbers which are adjacent to each other, then creating a nested list
+        """
+        id_list = self.identifying_bundles()
+        adjacent_groups = []
+        current_group = [id_list[0]]
+        for i in range(1, len(id_list)):
+            new_group = False
+            if id_list[i] - id_list[i - 1] == 1:
+                if str(self.df.loc[id_list[i], 'Buyer']) == str(self.df.loc[id_list[i-1], 'Buyer']):
+                    current_group.append(id_list[i])
+                else:
+                    new_group = True
+            else:
+                new_group = True
+
+            if new_group:
+                adjacent_groups.append(current_group)
+                current_group = [id_list[i]]
+
+        adjacent_groups.append(current_group)
+        return adjacent_groups
+
+    def bundle_shipping_average(self):
+        """
+        this calculates average shipping for each item in bundle &
+        inserts that item price for the bundle for each item
+        """
+        adjacent_groups = self.grouping_numbers_together()
+        for groups in adjacent_groups:
+            total_amt_in_bundle = len(groups)
+            buyer_shipping_cost = float(self.df.loc[groups[0], 'Buyer shipping cost'].replace('$', ''))
+            payment_fee_cost = float(self.df.loc[groups[0], 'Depop Payments fee'].replace('$', ''))
+            shipping_each_item_avg = 0 if buyer_shipping_cost == 0 else round(buyer_shipping_cost / total_amt_in_bundle, 2)
+            payment_fee_avg = 0 if payment_fee_cost == 0 else round(payment_fee_cost / total_amt_in_bundle, 2)
+            for itm in groups:
+                new_total = round(float(self.df.loc[itm, 'Item price'].replace('$', '')) + float(shipping_each_item_avg), 2)
+                dp_payment_fee = float(payment_fee_avg)
+                self.df.loc[itm, ['Buyer shipping cost', 'Total', 'Depop Payments fee']] = [shipping_each_item_avg, new_total, dp_payment_fee]
+                dp_fees = self.df.loc[itm, 'Depop fee'].replace('$', '')
+                boosting_fee = self.df.loc[itm, 'Boosting fee'].replace('$', '')
+                total_after_fees = round((new_total - float(dp_fees) - float(dp_payment_fee) - float(boosting_fee)), 2)
+                self.df.loc[itm, 'Total after fees'] = total_after_fees
+
+    def inserting_for_single_items(self):
+        """
+        this code will find the total after fees for each item by getting total + shipping and - (depop fees, payments fees and boosting fees)
+        then with this our code will be officially ready to insert into our matplotlib graph
+        """
+        bundle_id_list = self.identifying_bundles()
+        total_ids = self.df['Buyer'].count()
+        for idx in range(total_ids):
+            if idx not in bundle_id_list:
+                dp_buyer = self.df.loc[idx, 'Buyer']
+                dp_fees = float(self.df.loc[idx, 'Depop fee'].replace('$', ''))
+                dp_payment = float(self.df.loc[idx, 'Depop Payments fee'].replace('$', ''))
+                boosting_fee = float(self.df.loc[idx, 'Boosting fee'].replace('$', ''))
+                dp_total = float(self.df.loc[idx, 'Total'].replace('$', ''))
+                total_after_fees = round((dp_total - dp_fees - dp_payment - boosting_fee), 2)
+                print(idx, dp_buyer, total_after_fees)
+                self.df.loc[idx, 'Total after fees'] = total_after_fees
+
+    def exporting_as_csv_and_db(self):
+        """
+        this turns the df that we have manipulated into a csv
+        #!!
+        still need to add the shipping cost method below this and put it above this before we officially export to csv, but for now this'll do
+        """
+        self.df['Description'] = self.df['Description'].str.encode('ascii', 'ignore').str.decode('ascii').str.split(r'#|PLEASE').str[0].str.strip()
+        self.df.to_sql(f'dp_csv_solds_{self.account_username}', con=self.conn, index=False, if_exists='replace')
+
+    def run_dp_csv_scraper(self):
+        self.load_data()
+        self.bundle_shipping_average()
+        self.inserting_for_single_items()
+        self.exporting_as_csv_and_db()
+        
+    # def shipping_cost_for_item():
+    #     """
+    #     this will extract the shipping cost for each item and then add it to the total, to get a much more accurate number
+    #     if shipping cost not able to be found, due to different name, or other reason
+    #     we will just create a dictionary of estimated shipping price based on what information we have available, for most part
+    #     it should all work fine, but this will be just in case
+    #     """
+    #     shipping_costs = {
+    #         4.50: ['T-shirts', 'Hats', 'Other', 'Polo Shirts'],
+    #         5: ['Jeans', 'Joggers', 'Hoodies'],
+    #         6: ['Sweatshirts']
+    #     } #! will refine this when I have a better idea on shipping cost 
+    #     #! Extracting the location would be nice too, then I can create a universal shipping dictionary for this
+        
+    #     total_buyer_names = df_master['Name']
+    #     for idb, buyer_name in enumerate(total_buyer_names):
+            # pirate_ship_search_bar = driver.find_element('css selector', '[name="search-input"]')
+            # pirate_ship_search_bar.send_keys(buyer_name)
+            # WebDriverWait(driver, 6).until(EC.presence_of_element_located(('css selector', '[class="currency"]')))
+
+            # item_shipping_price = driver.find_element('css selector', '[class="currency"]').text.replace('$', '')
+            # df_master['Shipping cost'] = float(item_shipping_price)
+            # df_master.loc[idb, 'Total after fees'] = df_master['Total after fees'] - float(item_shipping_price)
+            # for _ in range(3):
+            #     pirate_ship_search_bar.click()
+
+
+if __name__ == '__main__':
+    DPPoster = DepopDBPoster()
+    DPPoster.run_dp_db_scraper()
+
+    DPinvScraper = DepopActiveInvScraper()
+    DPinvScraper.dp_start_up('argelarroyo2001@gmail.com', 'Pineappleguy305')
+    DPinvScraper.run_dp_scraper()
+
+    DPcsv = DepopCSVScraper('_realvintage')
+    DPcsv.run_dp_csv_scraper()
+
+#! Great news now
+"""
+after looking over my scrapers, the csv file will gather all the inforamtion I need, csv scrpaer not needed at all,
+so would only need to send one piece of data, and could get rid of the join data code I've been using
+so then that means i just need to get the scraper info, gather the data, then visualize the data
+"""
