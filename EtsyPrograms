@@ -1,0 +1,95 @@
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from ProgramFunctions import *
+import time
+import datetime
+import os
+import requests
+import sqlite3
+
+#! since etsy charges .20 per post, every 4 months, its best to just list the expensive good selling items, or just create like a formula to dictate how quick it will sell vs how much itll sell for,
+#! or quickness i guess would be the most valuable factor
+class BaseEtsy(BaseProgram):
+    program = "Etsy"
+    def __init__(self):
+        super().__init__()
+
+    def etsy_start_up(self, user_email, user_password):
+        etsy_signin_button = self.driver.find_element('xpath', '//*[contains(@class, "select-signin")]')
+        etsy_signin_button.click()
+
+        etsy_email = self.driver.find_element('id', 'join_neu_email_field')
+        etsy_email.send_keys(user_email)
+
+        etsy_password = self.driver.find_element('id', 'join_neu_password_field')
+        etsy_password.send_keys(user_password)
+
+        time.sleep(2)
+
+        user_signin_button = self.driver.find_element('css selector', '[class="wt-btn wt-btn--primary wt-width-full"]')
+        user_signin_button.click()
+
+def start_posting():
+    driver.get('https://www.etsy.com/your/shops/me/listing-editor/create')
+    who_made_item_option = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located(('css selector', "[name='whoMade']")))
+    who_made_item_option[0].click()
+
+    finished_product_option = driver.find_elements('css selector', "[name='isSupply']")
+    finished_product_option[0].click()
+
+    when_made_select = driver.find_elements('id', 'when-made-select')
+    when_made_select[0].click()
+
+    production_team = driver.find_element('id', 'production-partners-overlay')
+    production_team[0].click()
+
+    production_team_choose = driver.find_element('xpath', '//*[contains(@id, "wt-checkbox")]')
+    production_team_choose.click()
+
+    intro_post_continue = driver.find_element('css selector', '[data-apply-button="True"]')
+    intro_post_continue.click()
+
+def etsy_poster(item_title, item_description, item_price, item_category, item_images):
+    etsy_title = driver.find_element('id', 'listing-title-input')
+    etsy_title.send_keys(item_title)
+
+    etsy_description = driver.find_element('id', 'listing-description-textarea')
+    etsy_description.send_keys(item_description)
+
+    etsy_price = driver.find_element('id', 'listing-price-input')
+    etsy_price.send_keys(item_price)
+
+    etsy_pictures = driver.find_elements('css selector', '[multiple class="wt-display-none"]')
+    for img in item_images:
+        etsy_pictures.send_keys(img)
+    #! for this just look into item tag description and take out keywords from there, up to 13
+    #! create a big list of keywords to use as tags, some of the most widely searched keywords then just place them in?
+    #! or like if its team list basketball, nba, teamname, player, etc just get a group of tags from one single keyword, can use descriptions for that
+    item_tags = []
+    for ind_tags in item_tags:
+        etsy_tags = driver.find_element('id', 'listing-tags-input')
+        etsy_tags.send_keys(ind_tags)
+        time.sleep(.3)
+        etsy_tags.send_keys(Keys.RETURN)
+
+    shipping_package_information = driver.find_elements('css selector', '[class="wt-input wt-pr-xs-8"]')
+    if item_category in ['Hoodie', 'Hoodies', 'Jacket', 'Sweater', 'Pants', 'Sweats', 'Bomber jacket', 'Bootcut jeans', 'Bottoms', 'Casual pants', 'Casual trousers', 'Denim jackets', 'Dungarees', 'Faux fur coats', 'Gilets',
+                         'Jeans', 'Joggers', 'Jumpers', 'Leather jackets', 'Outerwear', 'Puffer jackets', 'Sweaters', 'Sweatshirts', 'Track jackets', 'Pea coats', 'Trainers', 'Windbreakers', 'Vests', 'Trainers']:
+        shipping_info_list = ['2', '0', '11', '7', '2']
+    elif item_category in ['Shirt', 'T-Shirt', 'T-shirts', 'Jersey', 'Athletic', 'Blazers', 'Button-Up', 'Cardigan', 'Casual shirts', 'Shorts', 'Tops', 'Tank tops', 'Polo shirts']:
+        shipping_info_list = ['1', '0', '7', '4', '2']
+    elif item_category in ['Hat']:
+        shipping_info_list = ['1', '0', '7', '4', '2']
+    elif item_category in ['Shoes', 'Sneakers', 'Boots']:
+        shipping_info_list = ['3', '0', '11', '7', '2']
+    for shipping_id, shipping_info in enumerate(shipping_package_information):
+        shipping_info[shipping_id].send_keys(shipping_info_list[shipping_id])
+
+if __name__ == '__main__':
+    url = "https://www.etsy.com"
+    driver = creating_webdriver(url)
