@@ -1,0 +1,219 @@
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from ProgramFunctions import *
+
+import sqlite3
+import time
+import os
+import traceback
+import requests
+import math
+import re
+import json
+import psutil
+import pandas as pd
+from datetime import date, datetime
+
+
+class BaseGrailed(BaseProgram):
+    program = 'Grailed'
+    def __init__(self):
+        super().__init__()
+
+    def grailed_start_up(self, email, pw):
+        grailed_log_in = self.driver.find_element('css selector', '[data-cy="login-btn"]')
+        grailed_log_in.click()
+
+        log_in_w_email = self.driver.find_element('css selector', '[data-cy="login-with-email"]')
+        log_in_w_email.click()
+
+        grailed_email = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located(('xpath', '//*[@id="email"]')))
+        grailed_email.send_keys(email)
+
+        grailed_pw = self.driver.find_element('xpath', '//*[@id="password"]')
+        grailed_pw.send_keys(pw)
+
+        sign_in_button = self.driver.find_element('css selector', '[data-cy="auth-login-submit"]')
+        sign_in_button.click()
+
+    def grailed_scroll_down(self):
+        last_height = self.driver.execute_script("return document.body.scrollHeight")
+        while True:
+            # Scroll down to the bottom of the screen
+            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            # Wait for the page to load
+            #! find web element to wait for the page to load
+            time.sleep(4)
+            new_height = self.driver.execute_script("return document.body.scrollHeight")
+            if new_height == last_height:
+                break
+            last_height = new_height
+
+#! this is the activeListingScraper
+#! Sold scraper more important right now
+class GrailedActiveScraper(BaseGrailed):
+    selling_or_sold = 'Selling'
+    def __init__(self):
+        super().__init__()
+        self.get_table_name(self.program, self.selling_or_sold)
+        self.title_list = []
+        self.price_list = []
+        self.size_list = []
+        self.brand_list = []
+        self.color_list = []
+        self.condition_list = []
+        self.gender_list = []
+        self.gen_category_list = []
+        self.category_list = []
+        self.images_list = []
+        self.image_len_list = []
+        self.start_date_list = []
+        self.last_edited_list = []
+        self.url_list = []
+
+    def link_extraction(self):
+        handles = self.driver.window_handles
+        self.driver.switch_to.window(handles[1])
+        url = self.driver.current_url
+        print(url)
+        self.url_list.append(url)
+
+    def brand_extraction(self):
+        global brand_text
+        brand_of_item = self.driver.find_element('xpath', '//*[starts-with(@class, "Designers_designer__")]')
+        brand_text = brand_of_item.text
+        self.brand_list.append(brand_text)
+
+    def title_extraction(self):
+        item_details = self.driver.find_elements('xpath', '//*[contains(@class, "Text Details_title__")]')
+        title_of_item = item_details[0].text
+        print('title_of_item ' + title_of_item)
+        self.title_list.append(title_of_item)
+
+    def listing_number_finder(self, string, list):
+        print(string)
+        pattern = re.compile(r'\d+')
+
+        # Extract the digit from the strings
+        numbers = pattern.findall(string)[0]
+        if 'month' in string:
+            numbers = int(numbers) * 30
+        elif 'days' in string:
+            numbers = int(numbers)
+        print(numbers)
+        list.append(numbers)
+
+    def listing_dates(self):
+        dates = self.driver.find_elements('xpath', '//*[contains(@class, "-time")]')
+        first_posted = dates[0].text
+        print(first_posted)
+        self.listing_number_finder(first_posted, self.start_date_list)
+        if len(dates) == 2:
+            last_edited = dates[1].text
+            print(last_edited)
+            self.listing_number_finder(last_edited, self.last_edited_list)
+        else:
+            self.last_edited_list.append(' ')
+
+    def image_extraction(self):
+        total_images_link = []
+        images_of_item = self.driver.find_elements('xpath', '//*[starts-with(@class, "Thumbnails_thumbnail_")]')
+        len_of_images = len(images_of_item)
+        self.images_len_list.append(int(len_of_images))
+        for images in images_of_item:
+            src_value = images.get_attribute('src')
+            total_images_link.append(src_value)
+        total_images_link = "; ".join(total_images_link)
+        self.images_list.append(total_images_link)
+
+    def breadcrumb_extraction(self):
+        global brand_text
+        brand_text = brand_text + " "
+        breadcrumb_tags = self.driver.find_elements('xpath', '//*[starts-with(@class, "Link underline Breadcrumbs_link__")]')
+
+        gender_of_item = breadcrumb_tags[1].text
+        gender_text = gender_of_item.replace(brand_text, "")
+        self.gender_list.append(gender_text)
+
+        gencat_of_item = breadcrumb_tags[2].text
+        gencat_text = gencat_of_item.replace(brand_text, "")
+        self.gen_category_list.append(gencat_text)
+
+        cat_of_item = breadcrumb_tags[3].text
+        cat_text = cat_of_item.replace(brand_text, "")
+        self.category_list.append(cat_text)
+
+    def price_extraction(self):
+        price_of_item = self.driver.find_elements('xpath', '//*[starts-with(@class, "Money_root__")]')
+        price_text = price_of_item[0].text
+        text_of_price = price_text.replace("$", "")
+        self.price_list.append(text_of_price)
+
+    def item_description_extraction(self):
+        item_details = self.driver.find_elements('xpath', '//*[starts-with(@class, "Details_value__")]')
+        size_text = item_details[0].text
+        sizing_text = size_text.replace('Men\'s / ', "")
+        self.size_list.append(sizing_text)
+
+        color_of_item = item_details[1].text
+        self.color_list.append(color_of_item)
+
+        condition_of_item = item_details[2].text
+        self.condition_list.append(condition_of_item)
+
+    def grailed_list_manipulation(self):
+        data_list = [
+            self.title_list,
+            self.price_list,
+            self.size_list,
+            self.brand_list,
+            self.color_list,
+            self.condition_list,
+            self.gender_list,
+            self.gen_category_list,
+            self.category_list,
+            self.images_list,
+            self.images_len_list,
+            self.start_date_list,
+            self.last_edited_list,
+            self.url_list
+        ]
+
+        self.sqlite_database_manipulation(data_list)
+
+    def extracting_info(self):
+        self.driver.get("https://www.grailed.com/sell/for-sale")
+        self.grailed_start_up('argelarroyo2001@gmail.com', 'Pineappleguy*305')
+        self.grailed_scroll_down()
+        try:
+            WebDriverWait(self.driver, 20).until(EC.presence_of_element_located(('xpath', '//*[contains(@class, "lazyload-wrapper ")]')))
+            grailed_post = self.driver.find_elements('xpath', '//*[contains(@class, "lazyload-wrapper ")]')
+            for post_id, _ in enumerate(grailed_post):
+                grailed_post = self.driver.find_elements('xpath', '//*[contains(@class, "lazyload-wrapper ")]')
+                self.driver.execute_script("arguments[0].scrollIntoView(true)", grailed_post[post_id])
+                time.sleep(5)
+                self.driver.execute_script("arguments[0].click();", grailed_post[post_id])
+                time.sleep(3)
+
+                self.link_extraction()
+                self.brand_extraction()
+                self.title_extraction()
+                self.listing_dates()
+                self.image_extraction()
+                self.breadcrumb_extraction()
+                self.price_extraction()
+                self.item_description_extraction()
+
+                time.sleep(4)
+                self.driver.close()
+                time.sleep(2)
+                handle = self.driver.window_handles
+                self.driver.switch_to.window(handle[0])
+        except Exception as e:
+            self.handle_exceptions(e, 'Failed to load, or I purposely closed it, Uploading the data')
+        self.grailed_list_manipulation()
