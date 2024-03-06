@@ -1,0 +1,556 @@
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+import sqlite3
+
+import time
+import os
+import traceback
+import requests
+from datetime import date
+
+#! this is a file that will contain all the functions that are used in the main program files, so that we can keep the main program files clean and easy to read
+#! and also so that we can reuse these functions in other programs if we need to
+#! also so that we can keep track of all the functions we have created and what they do
+#! and also so that we can keep track of all the functions we have created and what they do
+#TODO create function that notifies which accounts are active and which are not
+#TODO: create a function that will take in a list of items and then create a new excel sheet for each item, and then fill in the excel sheet with the data of the item
+ 
+ #!UPDATEME edit this to impose that it can just look inside for it, just like .lower() and then see if for example jnco is in title, doesnt need to be this long,a
+ #!Also with all the places for errors, this is unneccessary.
+total_brand_list = {
+    'Mitchell & Ness': ['mitchell', 'ness'],
+    'J. Galt': ['galt'],
+    'Fox Racing': ['fox', 'foxracing'],
+    'Chase': ['intimidator', 'nascar', 'busch', 'matt', 'nascar', 'tony', 'dale', 'jimmy', 'johnson', 'jimmie', 'fireball roberts', 'carl long', 'fred lorenzen', 'david reutimann', 'richard childress', 'ned jarrett', 'kyle petty', 'ricky rudd', 'adam petty', 'joe weatherly', 'donnie allison', 'dave marcis', 'tim richmond', 'bobby labonte', 'ricky craven', 'kyle busch', 'geoff bodine', 'bobby allison', 'joey logano', 'junior johnson', 'todd bodine', 'kenny wallace', 'carl edwards', 'denny hamlin', 'jamie mcmurray', 'benny parsons', 'kevin harvick', 'lee petty', 'jeff burton', 'david pearson', 'kurt busch', 'kenseth', 'terry labonte', 'michael waltrip', 'kasey kahne', 'earnhardt', 'cale yarborough', 'alan kulwicki', 'tony stewart', 'jimmie johnson', 'rusty wallace', 'darrell waltrip', 'davey allison', 'dale jarrett', 'mark martin', 'jeff gordon', 'bill elliott', 'dale earnhardt', 'richard petty'],
+    'Harley Davidson': ['harley', 'davidson'],
+    'Anti Social Social Club': ['anti', 'social', 'social club', 'social clubs'],
+    'Arc\'tyrex': ['arc', 'tyrex', 'arctyrex', "arc'tyrex"],
+    'Armani': ['exchange', 'armmani'],
+    'Balenciaga': ['bal', 'enciaga', 'balenciaga', 'balenci'],
+    'Birkenstock': ['birks', 'birk', 'birkenstock'],
+    'Cambridge Classics': ['cambridge', 'classics'],
+    'Buckle': ['buckle', 'bke'],
+    'Chalk Line': ['chalk'],
+    'Citizens of Humanity': ['citizens', 'humanity', 'humanities', 'humanity'],
+    'Coca-Cola': ['coca', 'cola', 'coca-cola'],
+    'Cole Haan': ['cole', 'haan', 'colehaan'],
+    'DC Comics': ['dc'],
+    'Disney': ['goofy', 'mickey', 'duck', 'disney', 'star', 'boba fett'],
+    'Dr. Martens': ['martens', 'marten'],
+    'Ecko Unltd.': ['ecko', 'unlimited', 'unltd.', 'unltd'],
+    'G-III': ['g', 'iii', 'g-iii'],
+    'Goodfellow & CO': ['goodfellow'],
+    'Hard Rock Cafe': ['hard', 'cafe', 'rock cafe'],
+    'Land\'s End': ["land's", 'lands'],
+    'Levi': ['levi', 'levis', 'levi\'s'],
+    'Liquid Blue': ['liquid'],
+    'Looney Tunes': ['acme', 'tweety', 'looney tunes', 'taz', 'sylvester', 'jam'],
+    'L.L. Bean': ['ll', 'bean'],
+    'Lululemon': ['lululemon', 'lulu'],
+    'Marvel': ['marvel', 'spiderman', 'spider-man', 'captain america', 'thor', 'iron man', 'iron-man', 'deadpool', 'marvel'],
+    'Old Navy': ['oldnavy', 'old'],
+    'Oskar Haug': ['haug'],
+    'Planet Hollywood': ['planet', 'hollywood'],
+    'Rocawear': ['rocawear', 'roca'],
+    'Salty Crew': ['salty', 'crew'],
+    'Star Wars': ['star', 'wars', 'boba', 'yoda', 'mandalorian'],
+    'The Mountain': ['mountain', 'the mountain'],
+    'The North Face': ['north', 'northface'],
+    'Timberland': ['timberland', 'timbs', 'timb'],
+    'Tommy Bahama': ['bahama', 'tommy bahama'],
+    'Tommy Hilfigher': ['tommy', 'hilfiger', 'hilfigher'],
+    'Vineyard Vines': ['vineyard', 'vines', 'vineyards'],
+    'Von Dutch': ['von', 'dutch', 'vondutch'],
+    'WWE': ['stone cold', 'wwe', 'rey mysterio', 'big show', 'john cena', 'triple h', 'shawn michaels', 'hulk hogan', 'mick foley', 'roman reigns', 'bautista'], #! Add more wrestlers for this
+    'American Eagle Outfitters': ['american', 'eagle'],
+    #! find some way to use the levnishtein library to identify close matches
+    'extras': ['dockers', 'eastland', 'dickies', 'apple', 'aeropostale', 'gymshark', 'guess', 'gymboree', 'ghirardelli', 'footjoy', 
+                'bebe', 'camel', 'crocs', 'clarks' 'coach', 'dior', 'footjoy', 'ferrari', 'funko', 'gildan', 'gatorade',
+                'gillette', 'gap', 'keen', 'kith', 'quicksilver', 'minecraft', 'nutmeg', 'obey', 'samsung', 'cabela', 'majestic', 'wrangler', 'woolrich', 'ariat', ''
+                'pendleton', 'converse', 'fila', 'kangol', 'lacoste', 'playboy', 'polaroid', 'chaps', 'billabong', 'lacoste', 'thrasher', 'bape', 'zara', 'vans', 'supreme', 'true religion',
+                'ugg', 'carhartt', 'stussy', 'starter', 'russell', 'rvca', 'rock revival', 'rsq', 'ralph lauren', 'reebok', 'quicksilver', 'pro player', 'primitive', 'patagonia', 'polo ralph lauren',
+                'under armour', 'logo athletic', 'baby phat', 'old navy', 'murano', 'nautica', 'miss me', 'new balance', 'obermeyer', 'nordstrom', 'new era', 'kappa', 'lrg', 'guess', 'jnco', 'jerzees', 'jordan',
+                'gant', 'dickies', 'columbia', 'coogi', 'cherokee', 'champion', 'bongo', 'birkenstock', 'calvin klein', 'adidas', 'asics', 'nike', 'puma', 'skechers', 'merrell', 'mizuno', 'hollister', 'fashion nova', 'shein',
+                'versace', 'prada', 'fendi', 'valentino', 'givenchy', 'hermes', 'burberry', 'gucci', 'asos', 'kate spade', 'michael kors', 'louis vuitton', 'chanel', 'dior', 'yves saint laurent', 'alexander mcqueen', 'balenciaga', 'off-white',
+                'vetements', 'rick owens', 'thom browne', 'comme des garcons', 'saint laurent', 'balmain', 'moncler', 'stone island', 'kith', 'palace', 'fear of god', 'yeezy', 'forever 21', 'ed hardy', 'lucky brand'],
+
+    'Unbranded': ['vintage', 'vnt', 'vtg', '90\'s'],
+    'NBA': ['unk', 'nba', 'kobe', 'lebron', 'kd', '76ers', 'hawks', 'bucks', 'bulls', 'cavaliers', 'celtics', 'clippers', 'grizzlies', 'heat', 'hornets', 'jazz', 'kings', 'knicks', 'lakers', 'magic', 'mavericks', 'nets', 'nuggets', 'pacers', 'pelicans', 'pistons', 'raptors', 'rockets', 'spurs', 'suns', 'thunder', 'timberwolves', 'trailblazers', 'warriors', 'wizards'],
+    'NFL': ['football', 'nfl', 'raider', 'raiders', 'packers', 'lions', 'saints', 'cardinals', 'chargers', 'bucs', 'buccanears', 'browns', 'cowboys', '49er', 'ravens', 'broncos', 'seahawk', 'seahawks', 'panthers', 'jets', 'colts', 'falcons', 'jaguars', 'jags', 'chiefs', 'bills', 'eagles', 'rams', 'titans', 'bengals', 'steelers', 'dolphins', 'patriots', 'vikings', 'commanders', 'redskins'],
+    'NHL': ['nhl'],
+    'MLB': ['mlb', 'angels', 'astros', 'athletics', 'jays', 'braves', 'brewers', 'cardinals', 'cubs', 'yankees', 'diamondbacks', 'dodgers', 'giants', 'guardians', 'mariners', 'marlins', 'mets', 'nationals', 'orioles', 'padres', 'phillies', 'pirates', 'rangers', 'rays', 'sox', 'reds', 'rockies', 'royals', 'tigers', 'twins', 'sox', 'yankees'],
+    }
+
+general_colors = {
+    "red": (255, 0, 0),
+    "green": (0, 128, 0),
+    "blue": (0, 0, 255),
+    "yellow": (255, 255, 0),
+    "purple": (128, 0, 128),
+    "orange": (255, 165, 0),
+    "pink": (255, 192, 203),
+    "brown": (139, 69, 19),
+    "blue": (0, 0,128), #techincally navy blue
+    "black": (0, 0, 0),
+    "white": (255, 255, 255),
+    "gray": (128, 128, 128),# yes 2 different gray, one is classified as silver
+    "gray": (192, 192, 192),
+    "yellow": (255, 215, 0),
+    "beige": (245, 245, 220)
+}
+
+nhl_teams = {
+    'Ducks': 'Anaheim Ducks',
+    'Coyotes': 'Arizona Coyotes',
+    'Bruins': 'Boston Bruins',
+    'Sabres': 'Buffalo Sabres',
+    'Flames': 'Calgary Flames',
+    'Hurricanes': 'Carolina Hurricanes',
+    'Blackhawks': 'Chicago Blackhawks',
+    'Avalanche': 'Colorado Avalanche',
+    'Blue Jackets': 'Columbus Blue Jackets',
+    'Stars': 'Dallas Stars',
+    'Red Wings': 'Detroit Red Wings',
+    'Oilers': 'Edmonton Oilers',
+    'Panthers': 'Florida Panthers',
+    'Kings': 'Los Angeles Kings',
+    'Wild': 'Minnesota Wild',
+    'Canadiens': 'Montreal Canadiens',
+    'Predators': 'Nashville Predators',
+    'Devils': 'New Jersey Devils',
+    'Islanders': 'New York Islanders',
+    'Rangers': 'New York Rangers',
+    'Senators': 'Ottawa Senators',
+    'Flyers': 'Philadelphia Flyers',
+    'Penguins': 'Pittsburgh Penguins',
+    'Sharks': 'San Jose Sharks',
+    'Blues': 'St. Louis Blues',
+    'Lightning': 'Tampa Bay Lightning',
+    'Maple Leafs': 'Toronto Maple Leafs',
+    'Canucks': 'Vancouver Canucks',
+    'Golden Knights': 'Vegas Golden Knights',
+    'Capitals': 'Washington Capitals',
+    'Jets': 'Winnipeg Jets',
+    # Add more NHL team names and values as needed
+}
+
+nfl_teams = {
+    'Cardinals': 'Arizona Cardinals',
+    'Falcons': 'Atlanta Falcons',
+    'Ravens': 'Baltimore Ravens',
+    'Bills': 'Buffalo Bills',
+    'Panthers': 'Carolina Panthers',
+    'Bears': 'Chicago Bears',
+    'Bengals': 'Cincinnati Bengals',
+    'Browns': 'Cleveland Browns',
+    'Cowboys': 'Dallas Cowboys',
+    'Broncos': 'Denver Broncos',
+    'Lions': 'Detroit Lions',
+    'Packers': 'Green Bay Packers',
+    'Texans': 'Houston Texans',
+    'Oilers': 'Houston Oilers',
+    'Colts': 'Indianapolis Colts',
+    'Jaguars': 'Jacksonville Jaguars',
+    'Chiefs': 'Kansas City Chiefs',
+    'Chargers': 'Los Angeles Chargers',
+    'Rams': 'Los Angeles Rams',
+    'Dolphins': 'Miami Dolphins',
+    'Vikings': 'Minnesota Vikings',
+    'Patriots': 'New England Patriots',
+    'Saints': 'New Orleans Saints',
+    'Giants': 'New York Giants',
+    'Jets': 'New York Jets',
+    'Raiders': 'Las Vegas Raiders',
+    'Eagles': 'Philadelphia Eagles',
+    'Steelers': 'Pittsburgh Steelers',
+    '49ers': 'San Francisco 49ers',
+    'Seahawks': 'Seattle Seahawks',
+    'Buccaneers': 'Tampa Bay Buccaneers',
+    'Titans': 'Tennessee Titans',
+    'Redskins': 'Washington Commanders',
+    'Commanders': 'Washington Commanders'
+}
+
+nba_teams = {
+    'Hawks': 'Atlanta Hawks',
+    'Celtics': 'Boston Celtics',
+    'Nets': 'Brooklyn Nets',
+    'Hornets': 'Charlotte Hornets',
+    'Bulls': 'Chicago Bulls',
+    'Cavaliers': 'Cleveland Cavaliers',
+    'Mavericks': 'Dallas Mavericks',
+    'Nuggets': 'Denver Nuggets',
+    'Pistons': 'Detroit Pistons',
+    'Warriors': 'Golden State Warriors',
+    'Rockets': 'Houston Rockets',
+    'Pacers': 'Indiana Pacers',
+    'Clippers': 'LA Clippers',
+    'Lakers': 'Los Angeles Lakers',
+    'Grizzlies': 'Memphis Grizzlies',
+    'Heat': 'Miami Heat',
+    'Bucks': 'Milwaukee Bucks',
+    'Timberwolves': 'Minnesota Timberwolves',
+    'Pelicans': 'New Orleans Pelicans',
+    'Knicks': 'New York Knicks',
+    'Thunder': 'Oklahoma City Thunder',
+    'Magic': 'Orlando Magic',
+    '76ers': 'Philadelphia 76ers',
+    'Suns': 'Phoenix Suns',
+    'Trail Blazers': 'Portland Trail Blazers',
+    'Kings': 'Sacramento Kings',
+    'Spurs': 'San Antonio Spurs',
+    'Raptors': 'Toronto Raptors',
+    'Jazz': 'Utah Jazz',
+    'Wizards': 'Washington Wizards',
+}
+
+mlb_teams = {
+    'Diamondbacks': 'Arizona Diamondbacks',
+    'Braves': 'Atlanta Braves',
+    'Orioles': 'Baltimore Orioles',
+    'Red Sox': 'Boston Red Sox',
+    'Cubs': 'Chicago Cubs',
+    'White Sox': 'Chicago White Sox',
+    'Reds': 'Cincinnati Reds',
+    'Indians': 'Cleveland Guardians',
+    'Rockies': 'Colorado Rockies',
+    'Tigers': 'Detroit Tigers',
+    'Astros': 'Houston Astros',
+    'Royals': 'Kansas City Royals',
+    'Angels': 'Los Angeles Angels',
+    'Dodgers': 'Los Angeles Dodgers',
+    'Marlins': 'Miami Marlins',
+    'Brewers': 'Milwaukee Brewers',
+    'Twins': 'Minnesota Twins',
+    'Mets': 'New York Mets',
+    'Yankees': 'New York Yankees',
+    'Athletics': 'Oakland Athletics',
+    'Phillies': 'Philadelphia Phillies',
+    'Pirates': 'Pittsburgh Pirates',
+    'Padres': 'San Diego Padres',
+    'Giants': 'San Francisco Giants',
+    'Mariners': 'Seattle Mariners',
+    'Cardinals': 'St. Louis Cardinals',
+    'Rays': 'Tampa Bay Rays',
+    'Rangers': 'Texas Rangers',
+    'Blue Jays': 'Toronto Blue Jays',
+    'Nationals': 'Washington Nationals',
+}
+
+waist_size_to_letter = {
+    'XS': ['27', '28'],
+    'S': ['29, 30', '31'],
+    'M': ['32', '33', '34'],
+    'L': ['35', '36', '37', '38'],
+    'XL': ['39', '40', '41', '42'],
+    'XXL': ['43', '44', '45', '46'],
+    'XXXL': ['47', '48', '49']
+}
+
+clothing_bottom = ['jeans', 'joggers', 'leggings', 'shorts', 'sweatpants', 'pants', 'activewear pants']
+clothing_tops = ['cardigans', 'hoodies', 'jumpers', 'sweatshirts', 't-shirts']
+clothing_accessories = ['hats', 'cap', 'shoes', 'bags']
+
+nascar_list = ['intimidator', 'nascar','fireball roberts', 'dale jarrett', 'mark martin', 'jeff gordon', 'bill elliott', 'dale earnhardt',
+    'carl long', 'fred lorenzen', 'david reutimann', 'richard childress', 'ned jarrett', 'kyle petty', 'ricky rudd', 'adam petty',
+    'joe weatherly', 'donnie allison', 'dave marcis', 'tim richmond', 'bobby labonte', 'ricky craven', 'kyle busch', 'geoff bodine',
+    'bobby allison', 'joey logano', 'junior johnson', 'todd bodine', 'kenny wallace', 'carl edwards', 'denny hamlin', 'jamie mcmurray',
+    'benny parsons', 'kevin harvick', 'lee petty', 'jeff burton', 'david pearson', 'kurt busch', 'kenseth', 'terry labonte',
+    'michael waltrip', 'kasey kahne', 'earnhardt', 'cale yarborough', 'alan kulwicki', 'tony stewart', 'jimmie johnson', 'rusty wallace',
+    'darrell waltrip', 'davey allison', 'richard petty']
+
+sports_list = ['NHL', 'NFL', 'NBA', 'MLB', 'Soccer', 'Baseball', 'Football']
+decade_list = ['90', '80', '70', '60', '50']
+excluded_terms = ['kid', 'youth', 'vintage']
+tags_to_signify_new = ['new', 'nwt']
+account_name = '_realvintage'
+
+# PROGRAM = 'Depop'
+# #?how to choose which files to scrape from?
+# #? maybe just have this same layout, and then just create like a list of options if they want to go though with these specific image files
+# TYPE_OF_PICTURES = "Concrete"
+# IMAGES_DIRECTORY_TO_SCRAPE_FROM = f'dp_inv__realvintage{TYPE_OF_PICTURES}'
+# ORIGINAL_DIRECTORY = extract_sql_path()
+# BASE_DIRECTORY = os.path.join(ORIGINAL_DIRECTORY, IMAGES_DIRECTORY_TO_SCRAPE_FROM)
+#     #! add bg remover somehow?
+
+class BaseProgram:
+    program_initial = {
+        'Depop': 'dp',
+        'Grailed': 'gr',
+        'Ebay': 'eb',
+        'Etsy': 'et',
+        'Poshmark': 'po',
+        'OfferUp': 'ou',
+        'Mercari': 'me'
+    }
+
+    def __init__(self):
+        self.creating_webdriver()
+        self.extract_sql_path()
+
+        self.account_name = '_realvintage'
+        self.user_country = 'United States'
+        self.user_city = 'Modesto'
+
+        self.combined = None
+        self.query_definitions = None
+        self.query_variable = None
+        self.placeholders = None
+
+#TODO ============================================================================================================
+    #! Helpful user functions and error handling
+    def handle_exception(self, e, string_to_say=""):
+        traceback.print_exc()
+        print(e)
+        if string_to_say != "":
+            print(string_to_say)
+
+#TODO ============================================================================================================
+    #! Commonly used functions that can be used to interact with web elements
+    def scroll_down(self):
+        return self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+
+    def scroll_up(self):
+        return self.driver.execute_script("window.scrollTo(0, 0);")
+
+    def scroll_to_element(self, element):
+        self.driver.execute_script("arguments[0].scrollIntoView();", element)
+
+    def web_driver_wait(self, tag, element, timer=10):
+        WebDriverWait(self.driver, timer).until(EC.element_to_be_clickable((tag, element)))
+#TODO ============================================================================================================
+    #! Identifying and creating variables for our programs
+    #? Would need to be called for every program with correct argumetns to intitialize self.table_name
+    def get_table_name(self, program, selling_or_sold):
+        #!self.program, and self.selling_or_sold will be decided when starting a specific program
+        #! self.account_name will be given automatically based on the person
+        if selling_or_sold == 'Selling':
+            selling_or_sold = 'inv'
+        elif selling_or_sold == 'Sold':
+            selling_or_sold = 'solds'
+        #Account name wouldnt necessarily be like the account username for depop or grailed, but more the
+        #account username that we scrape from our database for the user, the username they create for their MyEmployee profile
+        self.table_name = f'{self.program_initial[program]}_{selling_or_sold}_{account_name}'
+
+#TODO ============================================================================================================
+    def creating_file_for_images(self):
+        """
+        Only need to be used once in the beginning ot create the image folder that we will insert our images into
+        """
+        dir_path = os.path.join(self.root_directory, 'Image_Folder')
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+
+        specific_image_path = f'{self.program}_Images_{date.today()}'
+        self.images_directory = os.path.join(dir_path, specific_image_path)
+        if not os.path.exists(self.images_directory):
+            os.makedirs(self.images_directory)
+
+    def uploading_pics_to_file(self, image_list, pic_id):
+        """
+        We use this code to upload the pics into a file per row, to allow us to be able to insert these images
+        into the program loop that we use
+        """
+        for i, image in enumerate(image_list):
+            filename = f"{pic_id}_picture_{i}_."
+            filepath = os.path.join(self.root_directory, filename)
+
+            # Download the picture
+            response = requests.get(image)
+            open(filepath, 'wb').write(response.content)
+
+            # Upload the picture
+            files = {'picture': open(filepath, 'rb')}
+            requests.post(image, files=files)
+
+#TODO ============================================================================================================
+    #! Extracting pathing/directories
+    #! Both of these are done automatically when using BaseProgram
+    def creating_webdriver(self):
+        chrome_options = Options()
+        chrome_options.add_experimental_option("detach", True)
+        self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+
+    def extract_sql_path(self):
+        #! will be this for now until we change it to account_name
+        #! this will all be necessary at the moment, just for personal use, and local use but when i get big and start having to use 
+        #! a cloud server, then I will switch to that
+        database_name = 'Depop'
+        filename = f'{database_name}_database.db'
+        print(filename)
+        #! we search in the directory for our sql database name to extract the path
+        for root, _, files in os.walk(os.getcwd()):
+            if filename in files:
+                self.sql_path = os.path.join(root, filename)
+                self.root_directory = root
+
+                # Connect the path to sqlite
+                self.conn = sqlite3.connect(self.sql_path)
+                self.cursor = self.conn.cursor()
+
+#TODO ============================================================================================================
+    #! SQL Database manipulations
+    def table_exists(self, table_name):
+        """
+        check if the table in question exists in the database or not
+        """
+        self.cursor.execute(f"SHOW TABLES LIKE '{table_name}';")
+        return bool(self.cursor.fetchone())
+
+    def get_column_type(self, list_name, type_of_list):
+        for key in type_of_list:
+            if key in list_name:
+                return type_of_list[key]
+        return None
+
+    def sqlite_database_manipulation(self, data_list):
+        """
+        Can be used to create any type of table depending on the program and data_list that is recieved
+        """
+        # this is how data list should look like so just pass it as a list
+        # combined = zip(depop_title_list, depop_price_list, depop_likes_list, depop_bag_list, depop_boosted_list, depop_brand_list, depop_url_list, depop_men_or_wmn_list, depop_gen_category_list, depop_sub_category_list, depop_size_list, depop_condition_list, ['; '.join(x) for x in depop_images_list], depop_image_len_list, depop_color1_list, depop_color2_list)
+
+        #! so wtih this whole code it doesnt really matter if i insert them with a query variable or not, it just matters that i insert them in the correct order for their respective program
+        #! so that their info and their query variable names match
+        combined = zip(*data_list)
+        self.combined_list = list(combined)
+
+        #! Redo all column names to make them similar with less confusion
+        type_of_data_list = {
+                #All the item descriptions
+                'title': ['_title', 'VARCHAR(255) UNIQUE'], #! change description to title
+                'brand': ['_brand', 'VARCHAR(255)'],
+                'color': ['_color', 'VARCHAR(255)'],
+                'size': ['_size', 'VARCHAR(255)'],
+                #! chang men_or_wmn to gender as well
+                'gender': ['_gender', 'VARCHAR(255)'], #! change department to gender
+                #! change grailed gencat to gen_category as well please
+                'gen_category': ['_gen_category', 'VARCHAR(255)'], #! change style and type in ebay to these
+                'category': ['_category', 'VARCHAR(255)'],
+                'condition': ['_condition', 'VARCHAR(255)'],
+
+                #Money
+                'final_price': ['_final_price', 'INT'], #! Change total after fees to final_price
+                'price': ['_price', 'INT'],
+                'shipping': ['_shipping', 'INT'],
+                'tax': ['_tax', 'INT'],
+                'fee': ['_fee', 'INT'],
+
+                #Extra information/stats about the item
+                'likes': ['_likes', 'INT'],
+                'bag': ['_bag', 'INT'],
+                'boosted': ['_boosted', 'INT'],
+                'start_date': ['_start_date', 'VARCHAR(255)'], #! change date of sale and date of listing to start date and end date
+                'last_edited': ['_last_edited', 'VARCHAR(255)'],
+                'end_date': ['_end_date', 'VARCHAR(255)'],
+                'bundle': ['_bundle', 'INT'],
+
+                #Final information about the items, more detailed descriptive about post and post background
+                'url': ['_url', 'VARCHAR(255)'], #!change item link to url in ebay scraper
+                'images': ['_images', 'VARCHAR(255)'],
+                'image_len': ['_image_len', 'INT'],
+                'image_hash': ['_image_hash', 'VARCHAR(255)'], #! Need to get this code implemeneted and working as well
+                'seller': ['_seller', 'VARCHAR(255)'],
+                'buyer': ['_buyer', 'VARCHAR(255)']
+        }
+
+        columns = []
+        for data_ind_list in data_list:
+            column_type = self.get_column_type(data_ind_list, type_of_data_list)
+            if column_type is not None:
+                columns.append((f"{self.program_initial[self.program]}{column_type[0]}", column_type[1]))
+                self.query_definitions = ", ".join(f"{name} {type}" for name, type in columns)
+                self.query_variables = ", ".join(name for name, _ in columns)
+                self.placeholders = ", ".join("?" for _ in columns)
+        self.create_and_insert_query_entry()
+
+    def create_and_insert_query_entry(self):
+        try:
+            command_drop = f"""
+                DROP TABLE {self.table_name}
+            """
+            self.cursor.execute(command_drop)
+        except:
+            #! if this passes, then that means there are no tables to drop
+            pass
+
+        command_create = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                {self.query_definitions}
+            )
+        """
+        self.cursor.execute(command_create)
+
+        command_insert = f"""
+            INSERT OR IGNORE INTO {self.table_name} ({self.query_variables})
+            VALUES ({self.placeholders})
+        """
+        self.cursor.executemany(command_insert, self.combined_list)
+
+        self.conn.commit()
+        self.conn.close()
+
+    def get_last_number(self):
+        if os.path.exists('last_db_id_num.txt'):
+            with open('last_db_id_num.txt', 'r') as f:
+                return int(f.read())
+        else:
+            return  0
+
+    def extracting_db_results(self, table_name, query_variable):
+        #! this is just an example for now
+        # self.query_variable = 'dp_title, dp_men_or_wmn, dp_images, dp_price, dp_brand, dp_gen_category, dp_category, dp_size, dp_condition, dp_color1'
+
+        # total_count_of_rows = self.cursor.execute(f"SELECT COUNT(*) FROM {self.table_name}").fetchone()[0] #TODO put this back
+        total_count_of_rows = self.cursor.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+        print(total_count_of_rows)
+        # last_number = get_last_number() #TODO put this back
+        last_number = 0
+
+        def extraction_generator():
+            for id_num in range(total_count_of_rows):
+                print(id_num)
+                if id_num < last_number:
+                    continue
+                try:
+                    # db_query = self.cursor.execute(f"SELECT {self.query_variable} FROM {self.table_name} WHERE id = {str(id_num)};").fetchone() #TODO put this back
+                    db_query = self.cursor.execute(f"SELECT {query_variable} FROM {table_name} WHERE id = {str(id_num)};").fetchone()
+                    if db_query:
+                        column_names = query_variable.split(', ')
+                        # column_names = self.query_variables.split(', ')
+                        db_data = {col: val for col, val in zip(column_names, db_query)}
+
+                        depop_description_message = 'PLEASE READ CAREFULLY' #! only for depop bc the way it is created is so different compared to other programs
+                        for key in db_data.keys():
+                            if key.endswith('title'):
+                                db_data[key] = db_data[key].split(depop_description_message, maxsplit=1)[0].strip()
+                            if key.endswith('men_or_wmn'):
+                                db_data[key] = db_data[key].replace('swear', '')
+                        yield id_num, db_data
+                except Exception as e:
+                    self.handle_exceptions(e)
+                    yield f'BLANK {id_num}'
+                    break
+
+                # Save the current id_num to a file
+                with open('last_id_num.txt', 'w') as f:
+                    f.write(str(id_num))
+        return extraction_generator()
+
+
+if __name__ == '__main__':
+    testing = BaseProgram()
+    generator = testing.extracting_db_results('dp_inv__realvintage', 'dp_title, dp_men_or_wmn, dp_images, dp_price, dp_brand, dp_gen_category, dp_category, dp_size, dp_condition, dp_color1')
+    for result in generator:
+        print(result)
+
+    # #! today work on just making everything into classes
+        # Initialize any necessary variables or objects here
+    `#! switch to MySQL
