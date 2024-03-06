@@ -1,0 +1,255 @@
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from ProgramFunctions import *
+
+import time
+from datetime import datetime
+
+    # if acc_username == 'rv':
+    #     acc_name = 'TheRealVintage'
+    #     acc_pw = 'Pineappleguy305'
+    # elif acc_username == 'other':
+    #     acc_name = 'ararr_92'
+    #     acc_pw = 'Fernanda*1979'
+    # ebay_sold_link = "https://www.ebay.com/sh/ord/?filter=status:ALL_ORDERS"
+    
+class BaseEbay(BaseProgram):
+    program = 'Ebay'
+    def __init__(self):
+        super().__init__()
+
+    def ebay_start_up(self, email, pw):
+        #Sometimes sign in captcha is necessary
+        WebDriverWait(self.driver, 40).until(EC.presence_of_element_located(('css selector', '[id="userid"]')))
+        username_entry = self.driver.find_elements('css selector', '[id="userid"]')
+        username_entry[0].send_keys(email)
+        time.sleep(2)
+        username_continue_button = self.driver.find_element('css selector', '[id="signin-continue-btn"]')
+        username_continue_button.click()
+
+        WebDriverWait(self.driver, 80).until(EC.element_to_be_clickable(('xpath', '//*[@id="pass"]')))
+        time.sleep(1)
+        password_entry = self.driver.find_element('css selector', '[id="pass"]')
+        password_entry.send_keys(pw)
+        time.sleep(1)
+        sign_in_button = self.driver.find_element('css selector', '[id="sgnBt"]')
+        sign_in_button.click()
+        time.sleep(3)
+        self.driver.execute_script("window.open('https://www.ebay.com/mys/overview');")
+        self.driver.switch_to.window(self.driver.window_handles[-1])
+        time.sleep(3)
+
+class EbaySoldScraper(BaseEbay):
+    sold_labels = ['Item Condition', 'Sale Date', 'Brand', 'Department', 'Type', 'Style', 'Size', 'Color']
+    sold_labels_strings_list = ['ebay_item_condition_list', 'ebay_sale_date_list', 'ebay_brand_list', 'ebay_department_list', 'ebay_type_list',
+                        'ebay_style_list', 'ebay_size_list', 'ebay_color_list']
+    selling_or_sold = 'Sold'
+    def __init__(self):
+        super().__init__()
+        self.get_table_name(self.program, self.selling_or_sold)
+        self.ebay_title_list = []
+
+        self.ebay_link_list = []
+        self.ebay_url_list = []
+
+        self.ebay_price_list = []
+        self.ebay_item_condition_list = []
+        self.ebay_brand_list = []
+
+        self.ebay_department_list = []
+        self.ebay_gender_list = []
+
+        self.ebay_type_list = []
+        self.ebay_gen_category_list = []
+
+        self.ebay_style_list = []
+        self.ebay_category_list = []
+
+        self.ebay_size_list = []
+        self.ebay_color_list = []
+        self.ebay_start_date_list = []
+
+        self.ebay_sale_date_list = []
+        self.ebay_sold_date_list = []
+
+
+        self.ebay_images_list = []
+        self.ebay_buyer_name_list = []
+        self.ebay_images_len_list = []
+
+        self.sold_labels_list = [self.ebay_item_condition_list, self.ebay_sale_date_list, self.ebay_brand_list, self.ebay_department_list, self.ebay_type_list,
+                        self.ebay_style_list, self.ebay_size_list, self.ebay_color_list]
+
+        self.used_sold_labels = None
+
+    def sold_identifier(self, links):
+        post_link_class = links.get_attribute('class')
+        if 'item-link' in post_link_class:
+            return True
+        else:
+            post_link = links.get_attribute('href')
+            self.ebay_title_list.append(links.text)
+            self.ebay_link_list.append(post_link)
+            self.driver.execute_script(f"window.open('{post_link}');")
+            self.driver.switch_to.window(self.driver.window_handles[-1])
+        try:
+            WebDriverWait(self.driver, 4).until(EC.presence_of_element_located(('xpath', "//*[contains(text(), 'View purchased item')]")))
+            return False
+        except:
+            self.ebay_title_list.pop()
+            self.ebay_link_list.pop()
+            self.driver.close()
+            self.driver.switch_to.window(self.driver.window_handles[-1])
+            time.sleep(1)
+            return True
+
+    def scraping_image(self):
+        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located(('css selector', '[src^="https://i.ebayimg.com/images/g/"]')))
+        image_links = self.driver.find_elements('xpath', '//*[contains(@src, "1600.png")]')
+        img_list = []
+        for _, links in enumerate(image_links):
+            image_link = links.get_attribute('src')
+            # print(f' image_link {image_link}')
+            time.sleep(.5)
+            img_list.append(image_link)
+        the_img_list = "; ".join(img_list)
+        self.ebay_images_len_list.append(len(img_list))
+        self.ebay_images_list.append(the_img_list)
+
+    def scraping_start_date_and_buyer_name(self):
+        ebay_start_date = self.driver.find_elements('xpath', '//*[contains(@class, "ux-textspans")]') #13 characters
+        for s, start in enumerate(ebay_start_date):
+            if start.text == 'Buyer ID:':
+                self.ebay_buyer_name_list.append(ebay_start_date[s+1].text)
+            elif start.text == 'Start time:':
+                date_str = ebay_start_date[s+1].text[:13].strip()
+                converted_date = datetime.strptime(date_str, '%b %d, %Y').strftime('%m/%d/%Y')
+                print(converted_date)
+                self.ebay_start_date_list.append(converted_date)
+                break
+
+    def checking_refund(self):
+        view_order_details_button = self.driver.find_element('css selector', '[class^="d-top-panel-message__cta"]')
+        self.driver.execute_script('arguments[0].click();', view_order_details_button)
+        checking_for_refund = self.driver.find_elements('css selector', '[class="sh-neg"]')
+        for refund_text in checking_for_refund:
+            if refund_text.text == 'Refund':
+                self.ebay_link_list.pop()
+                self.ebay_title_list.pop()
+                self.ebay_images_len_list.pop()
+                self.ebay_images_list.pop()
+                self.ebay_start_date.pop()
+                return True
+        return False
+
+    def earning_scraper(self):
+        order_earnings = self.driver.find_elements('css selector', '[class="sh-bold"]')
+        for order_id, order_text in enumerate(order_earnings):
+            if order_text.text == 'Order earnings':
+                order_earnings = float(order_earnings[order_id + 1].text.replace('$', ''))
+                self.ebay_price_list.append(order_earnings)
+                break
+        self.driver.back()
+
+    def view_purchased_item_button(self):
+        try:
+            WebDriverWait(self.driver, 6).until(EC.presence_of_element_located(('xpath', "//*[contains(text(), 'View purchased item')]")))
+        except TimeoutError:
+            self.driver.refresh()
+            WebDriverWait(self.driver, 6).until(EC.presence_of_element_located(('xpath', "//*[contains(text(), 'View purchased item')]")))
+
+        view_purchased_item = self.driver.find_element('xpath', "//*[contains(text(), 'View purchased item')]")
+        self.driver.execute_script('arguments[0].click();', view_purchased_item)
+
+    def date_ovr_info_scraper(self):
+        """
+        This scrapes the date, the sale date specifically
+        This also creates a list of all the info that can be collected from this post as well, so that we can then use this to put into our
+        """
+        ebay_sold_label = self.driver.find_elements('css selector', '[class="left wbr cc-labels-values__label"]')
+        ebay_sold_info = self.driver.find_elements('css selector', '[class="left wbr cc-labels-values__value"]')
+        self.used_sold_labels = []
+        for s, _ in enumerate(ebay_sold_info):
+            if ebay_sold_label[s].text in self.sold_labels:
+                if ebay_sold_label[s].text == "Sale Date":
+                    date_str = ebay_sold_info[s].text.strip()
+                    converted_date = datetime.strptime(date_str, '%b %d, %Y').strftime('%m/%d/%Y')
+                    self.ebay_sale_date_list.append(converted_date)
+                else:
+                    self.sold_labels_list[self.sold_labels.index(ebay_sold_label[s].text)].append(ebay_sold_info[s].text)
+                self.used_sold_labels.append(ebay_sold_label[s].text)
+
+    def filling_missing_info(self):
+        used_set = set(self.used_sold_labels)
+        total_set = set(self.sold_labels)
+        missing_labels = list(total_set - used_set)
+        for miss in missing_labels: #!this needs some work still
+            for s, sold_label in enumerate(self.sold_labels_strings_list):
+                if f'ebay_{miss.lower()}_list' == str(sold_label):
+                    self.sold_labels_list[s].append('')
+                    break
+
+    def ebay_list_manipulation(self):
+        """
+        This manipulates the list names and send the data list of the newly manipulated names into our sqlite_database_manipulation method to
+        create a new table
+        """
+        self.ebay_sold_date_list = self.ebay_sale_date_list
+        del self.ebay_sale_date_list
+
+        self.ebay_url_list = self.ebay_link_list
+        del self.ebay_link_list
+
+        self.ebay_gender_list = self.ebay_department_list
+        del self.ebay_department_list
+
+        self.ebay_gen_category_list = self.ebay_type_list
+        del self.ebay_type_list
+
+        self.ebay_category_list = self.ebay_style_list
+        del self.ebay_style_list
+
+        data_list = [
+            self.ebay_title_list,
+            self.ebay_price_list,
+            self.ebay_url_list,
+            self.ebay_item_condition_list,
+            self.ebay_buyer_name_list,
+            self.ebay_start_date_list,
+            self.ebay_sold_date_list,
+            self.ebay_brand_list,
+            self.ebay_gender_list,
+            self.ebay_gen_category_list,
+            self.ebay_category_list,
+            self.ebay_size_list,
+            self.ebay_color_list,
+            self.ebay_images_list,
+            self.ebay_images_len_list
+                ]
+
+        self.sqlite_database_manipulation(data_list)
+
+    def ebay_sold_scraper(self):
+        self.driver.get("https://signin.ebay.com/ws/eBayISAPI.dll?SignIn&ru=https%3A%2F%2Fwww.ebay.com%2F")
+        WebDriverWait(self.driver, 20).until(EC.presence_of_element_located(('xpath', '//*[contains(@href, "https://www.ebay.com/itm/")]')))
+
+        sold_links = self.driver.find_elements('xpath', '//*[contains(@href, "https://www.ebay.com/itm/")]')
+
+        for links in sold_links:
+            if self.sold_identifier(links):
+                continue
+
+            self.scraping_image()
+
+            self.scraping_start_date_and_buyer_name()
+
+            if self.checking_refund():
+                continue
+
+            self.earning_scraper()
+
+            self.view_purchased_item_button()
+
+            self.filling_missing_info()
+
+        self.ebay_list_manipulation()
